@@ -1,0 +1,153 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.panel .panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.panel .big {
+  font-size: 1.8rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.panel .sub {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+button {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+button.primary:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+button.ghost {
+  background: transparent;
+}
+
+.status {
+  margin-top: 0.5rem;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  min-height: 1.25em;
+}
+
+.status.error { color: var(--danger); }
+
+.current-location {
+  font-size: 1.05rem;
+}
+
+.current-location .coords {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  margin-left: 0.5rem;
+}
+
+.saved-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.saved-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.saved-list .name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.saved-list .coords {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.badge.warn { background: var(--warn-soft); color: var(--warn); }
+.badge.danger { background: var(--danger-soft); color: var(--danger); }
+
+.advice .verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.advice ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.forecast-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.forecast-table th,
+.forecast-table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.forecast-table th {
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.forecast-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

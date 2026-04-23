@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Garden Weather</title>
+  <meta name="description" content="Weather for gardeners: soil temperature, moisture, frost risk, growing degree days, and watering advice." />
+  <link rel="stylesheet" href="./css/base.css" />
+  <link rel="stylesheet" href="./css/layout.css" />
+  <link rel="stylesheet" href="./css/components.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Garden Weather</h1>
+    <p class="tagline">Soil, sun, and frost &mdash; tuned for growers.</p>
+  </header>
+
+  <main class="app-main">
+    <section id="location-bar" class="card" aria-labelledby="location-title">
+      <h2 id="location-title">Location</h2>
+      <div id="current-location" class="current-location" aria-live="polite">
+        <span class="muted">No location selected.</span>
+      </div>
+      <div class="actions">
+        <button id="use-my-location" type="button">Use my location</button>
+        <button id="save-location" type="button" disabled>Save this location</button>
+      </div>
+      <div id="location-status" class="status" role="status" aria-live="polite"></div>
+    </section>
+
+    <section id="saved-locations" class="card" aria-labelledby="saved-title">
+      <h2 id="saved-title">Saved locations</h2>
+      <ul id="saved-list" class="saved-list"></ul>
+      <p id="saved-empty" class="muted">You haven&rsquo;t saved any locations yet.</p>
+    </section>
+
+    <section id="advice" class="card advice" aria-labelledby="advice-title" hidden>
+      <h2 id="advice-title">Today&rsquo;s verdict</h2>
+      <div id="advice-body"></div>
+    </section>
+
+    <section id="dashboard" class="dashboard" aria-labelledby="dashboard-title" hidden>
+      <h2 id="dashboard-title" class="sr-only">Forecast details</h2>
+      <div class="grid">
+        <article id="panel-now" class="card panel"><h3>Right now</h3><div class="panel-body"></div></article>
+        <article id="panel-frost" class="card panel"><h3>Frost risk</h3><div class="panel-body"></div></article>
+        <article id="panel-soil" class="card panel"><h3>Soil</h3><div class="panel-body"></div></article>
+        <article id="panel-water" class="card panel"><h3>Water balance</h3><div class="panel-body"></div></article>
+        <article id="panel-sun" class="card panel"><h3>Sun &amp; UV</h3><div class="panel-body"></div></article>
+        <article id="panel-gdd" class="card panel"><h3>Growing degree days</h3><div class="panel-body"></div></article>
+      </div>
+      <article id="panel-forecast" class="card">
+        <h3>7-day outlook</h3>
+        <div class="panel-body"></div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <small>Data from <a href="https://open-meteo.com" rel="noopener">Open-Meteo</a>. No tracking.</small>
+  </footer>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

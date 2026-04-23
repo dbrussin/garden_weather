@@ -1,0 +1,49 @@
+.app-header,
+.app-main,
+.app-footer {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+.app-header {
+  padding-bottom: 0.5rem;
+}
+
+.app-header .tagline {
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.app-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 0.5rem;
+}
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.dashboard .grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.app-footer {
+  padding-top: 0.5rem;
+  padding-bottom: 2rem;
+  color: var(--ink-soft);
+  text-align: center;
+}
