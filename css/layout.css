@@ -34,6 +34,20 @@
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.chart-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.app-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

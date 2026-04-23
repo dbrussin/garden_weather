@@ -116,6 +116,8 @@ button.ghost {
 
 .badge.warn { background: var(--warn-soft); color: var(--warn); }
 .badge.danger { background: var(--danger-soft); color: var(--danger); }
+.badge.ok { background: var(--accent-soft); color: var(--accent); }
+.badge.muted { background: var(--muted-soft); color: var(--ink-soft); }
 
 .advice .verdict {
   display: flex;
@@ -150,4 +152,149 @@ button.ghost {
 .forecast-table td.num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* Compact table used inside panels (planting guide). */
+.compact-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.compact-table th {
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.compact-table td.num,
+.compact-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Unit toggle in the header */
+.unit-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.unit-toggle .unit-btn {
+  border: 0;
+  border-radius: 0;
+  padding: 0.4rem 0.85rem;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.unit-toggle .unit-btn.active,
+.unit-toggle .unit-btn[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.unit-toggle .unit-btn:not(:last-child) {
+  border-right: 1px solid var(--line);
+}
+
+/* Inline edit form for saved locations */
+.saved-list .saved-item {
+  flex-wrap: wrap;
+}
+
+.saved-edit {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.edit-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: flex-end;
+}
+
+.edit-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.edit-form .field input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  min-width: 10ch;
+}
+
+.edit-form .field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.edit-form .edit-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.edit-form .edit-error {
+  flex-basis: 100%;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+/* Charts */
+.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  font-family: var(--font);
+}
+
+.chart .chart-line {
+  stroke-width: 1.8;
+  fill: none;
+}
+
+.chart .chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart .chart-bar {
+  opacity: 0.85;
+}
+
+.chart .chart-label {
+  font-size: 10px;
+  fill: var(--ink-soft);
+}
+
+.chart .chart-label-y {
+  text-anchor: end;
+}
+
+.chart .chart-label-x {
+  text-anchor: middle;
+}
+
+.chart .chart-label-v {
+  font-size: 9px;
+  fill: var(--ink-soft);
 }
