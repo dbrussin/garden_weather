@@ -57,6 +57,24 @@ export function renameLocation(id, name) {
   return entry;
 }
 
+/**
+ * Update any subset of { name, lat, lon } on a saved location.
+ * Lat/lon are re-rounded to 4 decimals for stability.
+ */
+export function updateLocation(id, patch = {}) {
+  const list = read();
+  const entry = list.find((l) => l.id === id);
+  if (!entry) return null;
+  if (patch.name != null) {
+    const trimmed = String(patch.name).trim();
+    if (trimmed) entry.name = trimmed;
+  }
+  if (patch.lat != null && Number.isFinite(+patch.lat)) entry.lat = round(+patch.lat);
+  if (patch.lon != null && Number.isFinite(+patch.lon)) entry.lon = round(+patch.lon);
+  write(list);
+  return entry;
+}
+
 function round(n) {
   return Math.round(n * 10_000) / 10_000;
 }

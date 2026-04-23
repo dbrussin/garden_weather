@@ -11,8 +11,16 @@
 </head>
 <body>
   <header class="app-header">
-    <h1>Garden Weather</h1>
-    <p class="tagline">Soil, sun, and frost &mdash; tuned for growers.</p>
+    <div class="app-header-row">
+      <div>
+        <h1>Garden Weather</h1>
+        <p class="tagline">Soil, sun, and frost &mdash; tuned for growers.</p>
+      </div>
+      <div class="unit-toggle" role="group" aria-label="Units">
+        <button id="unit-metric" type="button" class="unit-btn" aria-pressed="true">°C / mm</button>
+        <button id="unit-imperial" type="button" class="unit-btn" aria-pressed="false">°F / in</button>
+      </div>
+    </div>
   </header>
 
   <main class="app-main">
@@ -48,7 +56,31 @@
         <article id="panel-water" class="card panel"><h3>Water balance</h3><div class="panel-body"></div></article>
         <article id="panel-sun" class="card panel"><h3>Sun &amp; UV</h3><div class="panel-body"></div></article>
         <article id="panel-gdd" class="card panel"><h3>Growing degree days</h3><div class="panel-body"></div></article>
+        <article id="panel-humidity" class="card panel"><h3>Humidity &amp; disease</h3><div class="panel-body"></div></article>
+        <article id="panel-dry" class="card panel"><h3>Dry work window</h3><div class="panel-body"></div></article>
+        <article id="panel-zone" class="card panel"><h3>Hardiness zone</h3><div class="panel-body"></div></article>
       </div>
+
+      <article id="panel-planting" class="card">
+        <h3>Planting guide</h3>
+        <div class="panel-body"></div>
+      </article>
+
+      <div class="chart-grid">
+        <article id="panel-chart-temp" class="card">
+          <h3>Next 48 hours &mdash; air &amp; dew point</h3>
+          <div class="panel-body"></div>
+        </article>
+        <article id="panel-chart-soil" class="card">
+          <h3>Next 48 hours &mdash; soil temperature</h3>
+          <div class="panel-body"></div>
+        </article>
+        <article id="panel-chart-precip" class="card">
+          <h3>7-day precipitation</h3>
+          <div class="panel-body"></div>
+        </article>
+      </div>
+
       <article id="panel-forecast" class="card">
         <h3>7-day outlook</h3>
         <div class="panel-body"></div>

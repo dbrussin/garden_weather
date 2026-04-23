@@ -1,12 +1,11 @@
 // Derived gardening metrics from a raw Open-Meteo forecast.
 //
-// All functions here are pure. They take the raw API response and return
-// small objects the UI can render directly. Keep this free of DOM code.
+// All functions here are pure. They take the raw API response (metric units
+// throughout) and return small objects the UI can render directly. Keep
+// this free of DOM code and unit conversion — display-side modules handle °F.
 
 /**
- * Frost risk: look at the next 3 days of min temperatures.
- * Thresholds assume °C. If imperial, the caller should convert beforehand
- * or pass thresholds explicitly.
+ * Frost risk: look at the next 3 days of min temperatures. Thresholds in °C.
  */
 export function frostRisk(daily, { warnBelow = 2, severeBelow = 0 } = {}) {
   const mins = (daily?.temperature_2m_min || []).slice(3, 6); // skip 3 past_days
@@ -30,9 +29,8 @@ function rank(level) {
 }
 
 /**
- * Growing degree days accumulated over the past 30 days (or however many
- * past days are present). Base temperature defaults to 10°C (common for
- * warm-season vegetables). Daily GDD = max(0, ((tmax+tmin)/2) - base).
+ * Growing degree days accumulated over the past + today.
+ * Daily GDD = max(0, ((tmax+tmin)/2) - base). Base in °C.
  */
 export function growingDegreeDays(daily, { base = 10 } = {}) {
   const tmax = daily?.temperature_2m_max || [];
@@ -43,7 +41,7 @@ export function growingDegreeDays(daily, { base = 10 } = {}) {
   const now = Date.now();
   for (let i = 0; i < tmax.length; i++) {
     const date = times[i] ? Date.parse(times[i]) : null;
-    if (date == null || date > now) continue; // only accumulate past + today
+    if (date == null || date > now) continue;
     const hi = tmax[i];
     const lo = tmin[i];
     if (hi == null || lo == null) continue;
@@ -53,9 +51,6 @@ export function growingDegreeDays(daily, { base = 10 } = {}) {
   return { total: Math.round(total * 10) / 10, days, base };
 }
 
-/**
- * Soil snapshot from the hourly series nearest "now".
- */
 export function soilSnapshot(hourly) {
   const idx = nearestHourIndex(hourly?.time || []);
   if (idx < 0) return null;
@@ -69,10 +64,6 @@ export function soilSnapshot(hourly) {
   };
 }
 
-/**
- * Water balance: compare recent ET (water lost) against recent rainfall.
- * Positive deficit means plants are losing more than they're receiving.
- */
 export function waterBalance(daily, { window = 7 } = {}) {
   const times = daily?.time || [];
   const et = daily?.et0_fao_evapotranspiration || [];
@@ -95,9 +86,6 @@ export function waterBalance(daily, { window = 7 } = {}) {
   };
 }
 
-/**
- * Next rain: scan upcoming daily precipitation for the first day over 1 mm.
- */
 export function nextRain(daily) {
   const times = daily?.time || [];
   const precip = daily?.precipitation_sum || [];
@@ -110,9 +98,6 @@ export function nextRain(daily) {
   return null;
 }
 
-/**
- * Sun/UV snapshot for today.
- */
 export function sunSnapshot(daily) {
   const i = todayIndex(daily?.time || []);
   if (i < 0) return null;
@@ -120,8 +105,166 @@ export function sunSnapshot(daily) {
     uvMax: daily.uv_index_max?.[i] ?? null,
     sunrise: daily.sunrise?.[i] ?? null,
     sunset: daily.sunset?.[i] ?? null,
+    daylightSec: daily.daylight_duration?.[i] ?? null,
+    shortwaveSum: daily.shortwave_radiation_sum?.[i] ?? null,
   };
 }
+
+/**
+ * Humidity + disease pressure indicators over the next 24 hourly slots.
+ *
+ * VPD (vapor pressure deficit, kPa) — higher = more water loss / stress.
+ *   Roughly: <0.4 risk of fungal disease, 0.4–1.2 ideal, >1.6 stressed.
+ * Leaf wetness hours — hours with RH ≥ 90% or temp within ~1°C of dewpoint.
+ */
+export function humidityMetrics(current, hourly) {
+  const idx = nearestHourIndex(hourly?.time || []);
+  const nowTemp = current?.temperature_2m ?? hourly?.temperature_2m?.[idx];
+  const nowRh = current?.relative_humidity_2m ?? hourly?.relative_humidity_2m?.[idx];
+  const nowDew = current?.dew_point_2m ?? hourly?.dew_point_2m?.[idx];
+  const vpdNow = (nowTemp != null && nowRh != null) ? vpd(nowTemp, nowRh) : null;
+
+  let wetHours = 0;
+  let counted = 0;
+  const t = hourly?.temperature_2m || [];
+  const rh = hourly?.relative_humidity_2m || [];
+  const dp = hourly?.dew_point_2m || [];
+  for (let i = idx; i < idx + 24 && i < t.length; i++) {
+    if (rh[i] == null || t[i] == null) continue;
+    counted++;
+    const nearDew = dp[i] != null && (t[i] - dp[i]) <= 1;
+    if (rh[i] >= 90 || nearDew) wetHours++;
+  }
+  return {
+    temp: nowTemp ?? null,
+    rh: nowRh ?? null,
+    dewPoint: nowDew ?? null,
+    vpd: vpdNow != null ? Math.round(vpdNow * 100) / 100 : null,
+    leafWetHours: counted ? wetHours : null,
+    windowHours: counted,
+  };
+}
+
+// Saturation vapor pressure (Tetens) → VPD in kPa.
+function vpd(tempC, rhPct) {
+  const es = 0.6108 * Math.exp((17.27 * tempC) / (tempC + 237.3));
+  return es * (1 - rhPct / 100);
+}
+
+/**
+ * Longest upcoming stretch of hours with precipitation below `threshold` mm,
+ * starting from now. Useful for scheduling spraying, transplanting, mowing.
+ */
+export function rainFreeWindow(hourly, { threshold = 0.1, lookahead = 72 } = {}) {
+  const times = hourly?.time || [];
+  const precip = hourly?.precipitation || [];
+  const probs = hourly?.precipitation_probability || [];
+  const start = nearestHourIndex(times);
+  if (start < 0) return null;
+  const end = Math.min(start + lookahead, times.length);
+  let best = { startIdx: null, length: 0 };
+  let curStart = null;
+  let curLen = 0;
+  for (let i = start; i < end; i++) {
+    const dry = (precip[i] ?? 0) < threshold && (probs[i] ?? 0) < 50;
+    if (dry) {
+      if (curStart == null) curStart = i;
+      curLen++;
+      if (curLen > best.length) best = { startIdx: curStart, length: curLen };
+    } else {
+      curStart = null;
+      curLen = 0;
+    }
+  }
+  if (!best.length || best.startIdx == null) return null;
+  return {
+    start: times[best.startIdx],
+    end: times[Math.min(best.startIdx + best.length - 1, times.length - 1)],
+    hours: best.length,
+  };
+}
+
+/**
+ * Estimate USDA hardiness zone from daily minimum temperatures over multiple
+ * years. The USDA system is defined on the average annual extreme minimum
+ * temperature over a 30-year window. We approximate with 5 years of ERA5
+ * data — good enough to place most places within ±1 subzone.
+ *
+ * @param {{ time: string[], temperature_2m_min: number[] }} daily
+ * @returns {{
+ *   zone: string, zoneNumber: number, sub: "a"|"b",
+ *   avgMinC: number, avgMinF: number, years: number[]
+ * } | null}
+ */
+export function hardinessZone(daily) {
+  const times = daily?.time || [];
+  const mins = daily?.temperature_2m_min || [];
+  if (!times.length) return null;
+  const byYear = new Map();
+  for (let i = 0; i < times.length; i++) {
+    const year = times[i]?.slice(0, 4);
+    const t = mins[i];
+    if (!year || t == null) continue;
+    const prev = byYear.get(year);
+    if (prev == null || t < prev) byYear.set(year, t);
+  }
+  if (!byYear.size) return null;
+  const yearly = [...byYear.values()];
+  const avgMinC = yearly.reduce((a, b) => a + b, 0) / yearly.length;
+  const avgMinF = avgMinC * 9 / 5 + 32;
+  // USDA zone N spans [-60 + (N-1)*10, -60 + N*10] °F. Zone 1 starts at
+  // -60°F. Each zone is split into a (colder 5°F) and b (warmer 5°F).
+  let zoneNumber = Math.floor((avgMinF + 60) / 10) + 1;
+  zoneNumber = Math.max(1, Math.min(13, zoneNumber));
+  const zoneFloorF = -60 + (zoneNumber - 1) * 10;
+  const sub = avgMinF - zoneFloorF < 5 ? "a" : "b";
+  return {
+    zone: `${zoneNumber}${sub}`,
+    zoneNumber,
+    sub,
+    avgMinC: Math.round(avgMinC * 10) / 10,
+    avgMinF: Math.round(avgMinF * 10) / 10,
+    years: [...byYear.keys()].sort(),
+  };
+}
+
+/**
+ * Planting guide: given current soil temp (surface) and forecast min temps,
+ * flag which common crops are sowable. Temps are in °C.
+ *
+ * Minimum soil germination temps are classic extension-service figures.
+ */
+const CROPS = [
+  { name: "Peas", min: 4 },
+  { name: "Spinach", min: 5 },
+  { name: "Lettuce", min: 5 },
+  { name: "Radish", min: 5 },
+  { name: "Kale", min: 7 },
+  { name: "Carrots", min: 7 },
+  { name: "Beets", min: 10 },
+  { name: "Chard", min: 10 },
+  { name: "Corn", min: 13 },
+  { name: "Beans", min: 16 },
+  { name: "Cucumber", min: 18 },
+  { name: "Squash", min: 18 },
+  { name: "Tomato (transplant)", min: 15 },
+  { name: "Pepper (transplant)", min: 18 },
+  { name: "Melon", min: 21 },
+];
+
+export function plantingGuide(soil, frost) {
+  const surface = soil?.surfaceTemp ?? null;
+  const frostSoon = frost && frost.level !== "none";
+  return CROPS.map((crop) => {
+    if (surface == null) return { ...crop, status: "unknown" };
+    if (surface >= crop.min && !frostSoon) return { ...crop, status: "go" };
+    if (surface >= crop.min - 2) return { ...crop, status: "soon" };
+    return { ...crop, status: "wait" };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// helpers
 
 function todayIndex(times) {
   const today = new Date().toISOString().slice(0, 10);
@@ -129,7 +272,7 @@ function todayIndex(times) {
 }
 
 function nearestHourIndex(times) {
-  if (!times.length) return -1;
+  if (!times?.length) return -1;
   const now = Date.now();
   let best = 0;
   let bestDelta = Infinity;
@@ -139,6 +282,14 @@ function nearestHourIndex(times) {
     if (d < bestDelta) { bestDelta = d; best = i; }
   }
   return best;
+}
+
+/**
+ * Return the index of the first hourly sample at or after "now". Useful
+ * when callers want to slice the forecast window for charts.
+ */
+export function hourlyNowIndex(hourly) {
+  return nearestHourIndex(hourly?.time || []);
 }
 
 function round(n) {

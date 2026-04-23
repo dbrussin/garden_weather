@@ -10,6 +10,7 @@
   --warn-soft: #fbe6cf;
   --danger: #b03a2e;
   --danger-soft: #f6d6d1;
+  --muted-soft: #edefe9;
   --line: #e4e7df;
   --radius: 10px;
   --shadow: 0 1px 2px rgba(20, 30, 15, 0.04), 0 4px 12px rgba(20, 30, 15, 0.05);
@@ -29,6 +30,7 @@
     --warn-soft: #3d2c18;
     --danger: #e28074;
     --danger-soft: #3d1f1b;
+    --muted-soft: #262c25;
     --line: #2a312a;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.35);
   }
