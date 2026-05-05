@@ -6,6 +6,7 @@ import {
   growingDegreeDays,
   soilSnapshot,
   waterBalance,
+  dailyWaterDetail,
   nextRain,
   sunSnapshot,
   humidityMetrics,
@@ -33,6 +34,7 @@ export function renderDashboard(forecast, historical) {
   const frost = frostRisk(forecast.daily);
   const soil = soilSnapshot(forecast.hourly);
   const water = waterBalance(forecast.daily);
+  const waterDetail = dailyWaterDetail(forecast.daily);
   const rain = nextRain(forecast.daily);
   const sun = sunSnapshot(forecast.daily);
   const gdd = growingDegreeDays(forecast.daily);
@@ -44,7 +46,7 @@ export function renderDashboard(forecast, historical) {
   renderNow(forecast.current);
   renderFrost(frost);
   renderSoil(soil);
-  renderWater(water, rain);
+  renderWater(waterDetail, rain);
   renderSun(sun);
   renderGdd(gdd);
   renderHumidity(humidity);
@@ -98,14 +100,73 @@ function renderSoil(soil) {
   `;
 }
 
-function renderWater(water, rain) {
+function renderWater(waterDetail, rain) {
   const el = body("panel-water");
-  const deficit = water?.deficit ?? 0;
-  const sign = deficit > 0 ? "deficit" : "surplus";
+  const imperial = getUnits() === "imperial";
+  const unit = imperial ? "in" : "mm";
+
+  function fmtWaterVal(mm) {
+    const v = imperial ? mmToIn(mm) : mm;
+    return fmtNum(v, imperial ? 2 : 1);
+  }
+
+  function deficitCell(deficit) {
+    const v = imperial ? mmToIn(deficit) : deficit;
+    const cls = v > 0.05 ? "num water-deficit" : v < -0.05 ? "num water-surplus" : "num";
+    const sign = v > 0.05 ? "+" : "";
+    return `<td class="${cls}">${sign}${fmtNum(v, imperial ? 2 : 1)}</td>`;
+  }
+
+  const histRows = (waterDetail.historical || []).map((d) => `
+    <tr class="water-hist">
+      <td>${fmtDay(d.date)}</td>
+      <td class="num">${fmtWaterVal(d.et)}</td>
+      <td class="num">${fmtWaterVal(d.precip)}</td>
+      ${deficitCell(d.deficit)}
+    </tr>`).join("");
+
+  const projRows = (waterDetail.projected || []).map((d, i) => {
+    const isToday = i === 0;
+    const probStr = d.precipProb != null ? `<span class="water-prob">${d.precipProb}%</span>` : "";
+    return `
+    <tr class="${isToday ? "water-today" : "water-proj"}">
+      <td>${fmtDay(d.date)}${isToday ? " <span class='water-today-label'>today</span>" : ""}</td>
+      <td class="num">${fmtWaterVal(d.et)}</td>
+      <td class="num">${fmtWaterVal(d.precip)} ${probStr}</td>
+      ${deficitCell(d.deficit)}
+    </tr>`;
+  }).join("");
+
+  const cum = imperial ? mmToIn(waterDetail.cumulative ?? 0) : (waterDetail.cumulative ?? 0);
+  const cumSign = cum > 0.05 ? "+" : "";
+  const cumCls = cum > 0.05 ? "water-deficit" : cum < -0.05 ? "water-surplus" : "";
+  const rainNote = rain
+    ? `Next rain: ${fmtDay(rain.date)} (~${fmtPrecip(rain.amount)})`
+    : "No rain in 7-day forecast.";
+
   el.innerHTML = `
-    <div class="big">${fmtPrecip(Math.abs(deficit))}</div>
-    <div class="sub">${water.window}-day ${sign} (ET ${fmtPrecip(water.et)} &minus; rain ${fmtPrecip(water.precip)})</div>
-    <div class="sub">${rain ? `Next rain: ${fmtDay(rain.date)} (~${fmtPrecip(rain.amount)})` : "No rain in forecast."}</div>
+    <table class="water-table">
+      <thead>
+        <tr>
+          <th>Day</th>
+          <th class="num">ET (${unit})</th>
+          <th class="num">Rain</th>
+          <th class="num">Deficit</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${histRows}
+        <tr class="water-divider"><td colspan="4"></td></tr>
+        ${projRows}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3" class="water-cum-label">10-day cumulative</td>
+          <td class="num ${cumCls}">${cumSign}${fmtNum(cum, imperial ? 2 : 1)} ${unit}</td>
+        </tr>
+      </tfoot>
+    </table>
+    <div class="sub" style="margin-top:0.4rem">${rainNote}</div>
   `;
 }
 

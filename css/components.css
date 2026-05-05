@@ -259,6 +259,98 @@ button.ghost {
   font-size: 0.85rem;
 }
 
+/* Manual coordinate entry */
+.manual-coord {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.manual-coord summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+  user-select: none;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.manual-coord summary::-webkit-details-marker { display: none; }
+
+.manual-coord summary::before {
+  content: "▶";
+  font-size: 0.65rem;
+  transition: transform 0.15s;
+}
+
+.manual-coord[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.manual-coord .edit-form {
+  margin-top: 0.6rem;
+}
+
+/* Water balance detail table */
+.water-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.water-table th,
+.water-table td {
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.water-table th {
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.water-table td.num,
+.water-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.water-hist td { color: var(--ink-soft); }
+
+.water-divider td {
+  border-bottom: 2px solid var(--accent-soft);
+  padding: 0;
+  height: 2px;
+}
+
+.water-today td { font-weight: 600; }
+
+.water-today-label {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--ink-soft);
+  margin-left: 0.3rem;
+}
+
+.water-deficit { color: var(--warn); }
+.water-surplus { color: var(--accent); }
+
+.water-prob {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.water-cum-label {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.water-table tfoot td {
+  border-bottom: none;
+  border-top: 1px solid var(--line);
+}
+
 /* Charts */
 .chart {
   width: 100%;

@@ -33,6 +33,27 @@
         <button id="use-my-location" type="button">Use my location</button>
         <button id="save-location" type="button" disabled>Save this location</button>
       </div>
+      <details class="manual-coord">
+        <summary>Enter coordinates manually</summary>
+        <form id="coord-form" class="edit-form">
+          <div class="field">
+            <label for="coord-lat">Latitude</label>
+            <input id="coord-lat" type="number" step="any" min="-90" max="90" placeholder="45.5051" />
+          </div>
+          <div class="field">
+            <label for="coord-lon">Longitude</label>
+            <input id="coord-lon" type="number" step="any" min="-180" max="180" placeholder="-122.6750" />
+          </div>
+          <div class="field">
+            <label for="coord-name">Name (optional)</label>
+            <input id="coord-name" type="text" placeholder="My garden" style="min-width:14ch" />
+          </div>
+          <div class="edit-actions">
+            <button type="submit">Go</button>
+          </div>
+          <div id="coord-error" class="edit-error" hidden></div>
+        </form>
+      </details>
       <div id="location-status" class="status" role="status" aria-live="polite"></div>
     </section>
 

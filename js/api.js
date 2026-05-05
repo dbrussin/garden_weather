@@ -12,6 +12,8 @@ import { getCached, setCached } from "./cache.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ARCHIVE_TTL_MS = 30 * DAY_MS;
+const FORECAST_TTL_MS = 60 * 60 * 1000; // 1 hour — matches Open-Meteo update cadence
+const HIST_DAILY_TTL_MS = 7 * DAY_MS;   // past-days data changes only with reanalysis
 
 const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
 const ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
@@ -66,10 +68,34 @@ const DAILY_VARS = [
 
 /**
  * Fetch a full gardener-relevant forecast bundle (always metric).
+ *
+ * Two-tier cache:
+ *  - "forecast" ns: full merged response, TTL 1 hour (fresh enough for all
+ *    current-conditions and upcoming-frost decisions).
+ *  - "hist_daily" ns: past-days daily slice keyed by coord+date, TTL 7 days
+ *    (past weather rarely changes; avoids re-fetching 5 days of history every
+ *    hour).
+ *
+ * When the 1-hour forecast cache is cold but hist_daily is warm we request
+ * only past_days=0 (today + 7 forecast days) and merge with the cached slice,
+ * reducing bandwidth by ~40%.
+ *
  * @param {{ lat: number, lon: number }} opts
- * @returns {Promise<object>} Raw Open-Meteo response.
+ * @returns {Promise<object>} Raw Open-Meteo response (metric).
  */
 export async function fetchForecast({ lat, lon }) {
+  const coordKey = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const forecastHit = getCached("forecast", coordKey, FORECAST_TTL_MS);
+  if (forecastHit) return forecastHit;
+
+  const histKey = `${coordKey},${today}`;
+  const histDaily = getCached("hist_daily", histKey, HIST_DAILY_TTL_MS);
+
+  // Fetch only current+future when we already have the historical daily slice.
+  const pastDays = histDaily ? 0 : 5;
+
   const params = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lon),
@@ -77,13 +103,47 @@ export async function fetchForecast({ lat, lon }) {
     hourly: HOURLY_VARS.join(","),
     daily: DAILY_VARS.join(","),
     timezone: "auto",
-    past_days: "3",
+    past_days: String(pastDays),
     forecast_days: "7",
   });
 
   const res = await fetch(`${FORECAST_URL}?${params.toString()}`);
   if (!res.ok) throw new Error(`Forecast request failed (${res.status})`);
-  return res.json();
+  const data = await res.json();
+
+  let merged = data;
+
+  if (histDaily) {
+    // Prepend cached historical daily arrays to the fresh forecast daily arrays.
+    const freshDaily = data.daily || {};
+    const mergedDaily = {};
+    const keys = new Set([...Object.keys(histDaily), ...Object.keys(freshDaily)]);
+    for (const key of keys) {
+      if (Array.isArray(histDaily[key]) || Array.isArray(freshDaily[key])) {
+        mergedDaily[key] = [...(histDaily[key] || []), ...(freshDaily[key] || [])];
+      } else {
+        mergedDaily[key] = freshDaily[key] ?? histDaily[key];
+      }
+    }
+    merged = { ...data, daily: mergedDaily };
+  } else {
+    // Extract and cache the historical daily slice (past days only, before today).
+    const daily = data.daily || {};
+    const times = daily.time || [];
+    const todayIdx = times.findIndex((t) => t?.slice(0, 10) === today);
+    if (todayIdx > 0) {
+      const slice = {};
+      for (const key of Object.keys(daily)) {
+        if (Array.isArray(daily[key])) {
+          slice[key] = daily[key].slice(0, todayIdx);
+        }
+      }
+      setCached("hist_daily", histKey, slice);
+    }
+  }
+
+  setCached("forecast", coordKey, merged);
+  return merged;
 }
 
 /**
