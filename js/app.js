@@ -18,7 +18,7 @@ const els = {
   status: document.getElementById("location-status"),
   unitMetric: document.getElementById("unit-metric"),
   unitImperial: document.getElementById("unit-imperial"),
-  coordForm: document.getElementById("coord-form"),
+  coordGo: document.getElementById("coord-go"),
   coordLat: document.getElementById("coord-lat"),
   coordLon: document.getElementById("coord-lon"),
   coordName: document.getElementById("coord-name"),
@@ -38,7 +38,11 @@ els.useMine.addEventListener("click", onUseMyLocation);
 els.save.addEventListener("click", onSave);
 els.unitMetric.addEventListener("click", () => switchUnits("metric"));
 els.unitImperial.addEventListener("click", () => switchUnits("imperial"));
-els.coordForm.addEventListener("submit", onManualCoord);
+els.coordGo.addEventListener("click", onManualCoord);
+// Enter key in any coord input triggers Go.
+for (const input of [els.coordLat, els.coordLon, els.coordName]) {
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") onManualCoord(); });
+}
 
 syncUnitButtons();
 
@@ -54,8 +58,7 @@ async function onUseMyLocation() {
   }
 }
 
-async function onManualCoord(e) {
-  e.preventDefault();
+async function onManualCoord() {
   const lat = parseFloat(els.coordLat.value);
   const lon = parseFloat(els.coordLon.value);
   const nameInput = els.coordName.value.trim();
