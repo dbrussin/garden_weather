@@ -64,6 +64,46 @@ export function soilSnapshot(hourly) {
   };
 }
 
+/**
+ * Per-day ET, precipitation, and deficit for the last `histDays` and next
+ * `futureDays` (including today). Positive deficit = more ET than rain.
+ */
+export function dailyWaterDetail(daily, { histDays = 5, futureDays = 5 } = {}) {
+  const times = daily?.time || [];
+  const et = daily?.et0_fao_evapotranspiration || [];
+  const precip = daily?.precipitation_sum || [];
+  const precipProb = daily?.precipitation_probability_max || [];
+
+  const today = new Date().toISOString().slice(0, 10);
+  const todayIdx = times.findIndex((t) => t?.slice(0, 10) === today);
+  if (todayIdx < 0) return { historical: [], projected: [], cumulative: 0 };
+
+  const historical = [];
+  const histStart = Math.max(0, todayIdx - histDays);
+  for (let i = histStart; i < todayIdx; i++) {
+    const etv = et[i] ?? 0;
+    const pv = precip[i] ?? 0;
+    historical.push({ date: times[i], et: round(etv), precip: round(pv), deficit: round(etv - pv) });
+  }
+
+  const projected = [];
+  for (let i = todayIdx; i < Math.min(todayIdx + futureDays, times.length); i++) {
+    const etv = et[i] ?? 0;
+    const pv = precip[i] ?? 0;
+    projected.push({
+      date: times[i],
+      et: round(etv),
+      precip: round(pv),
+      deficit: round(etv - pv),
+      precipProb: precipProb[i] ?? null,
+    });
+  }
+
+  const all = [...historical, ...projected];
+  const cumulative = round(all.reduce((s, d) => s + d.deficit, 0));
+  return { historical, projected, cumulative };
+}
+
 export function waterBalance(daily, { window = 7 } = {}) {
   const times = daily?.time || [];
   const et = daily?.et0_fao_evapotranspiration || [];
