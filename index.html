@@ -113,6 +113,22 @@
     <small>Data from <a href="https://open-meteo.com" rel="noopener">Open-Meteo</a>. No tracking.</small>
   </footer>
 
+  <script>
+    // ES modules are blocked on file:// origins. Show a clear message rather
+    // than silently leaving all buttons non-functional.
+    if (location.protocol === 'file:') {
+      document.addEventListener('DOMContentLoaded', function () {
+        var notice = document.createElement('p');
+        notice.className = 'file-notice';
+        notice.innerHTML =
+          '<strong>Serve over HTTP to use this app.</strong> ' +
+          'ES modules are blocked on <code>file://</code>. ' +
+          'Run <code>python3 -m http.server 8000</code> then open ' +
+          '<a href="http://localhost:8000">http://localhost:8000</a>.';
+        document.querySelector('main').prepend(notice);
+      });
+    }
+  </script>
   <script type="module" src="./js/app.js"></script>
 </body>
 </html>
