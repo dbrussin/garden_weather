@@ -4,6 +4,8 @@
 // Values are always in their display units (converted by the caller via
 // format.js) since the chart only cares about numbers + labels.
 
+(function () {
+
 const W = 520;
 const H = 140;
 const PAD = { top: 10, right: 10, bottom: 22, left: 32 };
@@ -39,7 +41,7 @@ function escapeSvg(s) {
  * Multi-series line chart over shared x-axis (array of Date-parsable strings).
  * @param {{ times: string[], series: Array<{ name: string, values: number[], color?: string }>, yUnit?: string, xFormat?: (iso: string) => string }} opts
  */
-export function lineChart({ times, series, yUnit = "", xFormat }) {
+function lineChart({ times, series, yUnit = "", xFormat }) {
   if (!times?.length || !series?.length) return emptyChart();
   const xs = { start: PAD.left, end: PAD.right };
   const ys = { start: PAD.top, end: PAD.bottom };
@@ -92,7 +94,7 @@ export function lineChart({ times, series, yUnit = "", xFormat }) {
  * Single-series bar chart (used for daily precipitation).
  * @param {{ labels: string[], values: number[], unit?: string, color?: string }} opts
  */
-export function barChart({ labels, values, unit = "", color }) {
+function barChart({ labels, values, unit = "", color }) {
   if (!labels?.length) return emptyChart();
   const hi = Math.max(0.1, ...values.filter((v) => v != null));
   const yScale = scale([0, hi * 1.15], H, { start: PAD.top, end: PAD.bottom }, { min: 0, max: hi * 1.15 });
@@ -157,3 +159,8 @@ function chartColor(i) {
 function emptyChart() {
   return `<svg viewBox="0 0 ${W} ${H}" class="chart"><text x="${W / 2}" y="${H / 2}" class="chart-label" text-anchor="middle">No data</text></svg>`;
 }
+
+window.lineChart = lineChart;
+window.barChart = barChart;
+
+})();

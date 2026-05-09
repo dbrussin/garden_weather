@@ -4,10 +4,12 @@
 // throughout) and return small objects the UI can render directly. Keep
 // this free of DOM code and unit conversion — display-side modules handle °F.
 
+(function () {
+
 /**
  * Frost risk: look at the next 3 days of min temperatures. Thresholds in °C.
  */
-export function frostRisk(daily, { warnBelow = 2, severeBelow = 0 } = {}) {
+function frostRisk(daily, { warnBelow = 2, severeBelow = 0 } = {}) {
   const mins = (daily?.temperature_2m_min || []).slice(3, 6); // skip 3 past_days
   const dates = (daily?.time || []).slice(3, 6);
   let worst = { level: "none", day: null, temp: null };
@@ -32,7 +34,7 @@ function rank(level) {
  * Growing degree days accumulated over the past + today.
  * Daily GDD = max(0, ((tmax+tmin)/2) - base). Base in °C.
  */
-export function growingDegreeDays(daily, { base = 10 } = {}) {
+function growingDegreeDays(daily, { base = 10 } = {}) {
   const tmax = daily?.temperature_2m_max || [];
   const tmin = daily?.temperature_2m_min || [];
   const times = daily?.time || [];
@@ -51,7 +53,7 @@ export function growingDegreeDays(daily, { base = 10 } = {}) {
   return { total: Math.round(total * 10) / 10, days, base };
 }
 
-export function soilSnapshot(hourly) {
+function soilSnapshot(hourly) {
   const idx = nearestHourIndex(hourly?.time || []);
   if (idx < 0) return null;
   return {
@@ -68,7 +70,7 @@ export function soilSnapshot(hourly) {
  * Per-day ET, precipitation, and deficit for the last `histDays` and next
  * `futureDays` (including today). Positive deficit = more ET than rain.
  */
-export function dailyWaterDetail(daily, { histDays = 5, futureDays = 5 } = {}) {
+function dailyWaterDetail(daily, { histDays = 5, futureDays = 5 } = {}) {
   const times = daily?.time || [];
   const et = daily?.et0_fao_evapotranspiration || [];
   const precip = daily?.precipitation_sum || [];
@@ -104,7 +106,7 @@ export function dailyWaterDetail(daily, { histDays = 5, futureDays = 5 } = {}) {
   return { historical, projected, cumulative };
 }
 
-export function waterBalance(daily, { window = 7 } = {}) {
+function waterBalance(daily, { window = 7 } = {}) {
   const times = daily?.time || [];
   const et = daily?.et0_fao_evapotranspiration || [];
   const precip = daily?.precipitation_sum || [];
@@ -126,7 +128,7 @@ export function waterBalance(daily, { window = 7 } = {}) {
   };
 }
 
-export function nextRain(daily) {
+function nextRain(daily) {
   const times = daily?.time || [];
   const precip = daily?.precipitation_sum || [];
   const now = Date.now();
@@ -138,7 +140,7 @@ export function nextRain(daily) {
   return null;
 }
 
-export function sunSnapshot(daily) {
+function sunSnapshot(daily) {
   const i = todayIndex(daily?.time || []);
   if (i < 0) return null;
   return {
@@ -157,7 +159,7 @@ export function sunSnapshot(daily) {
  *   Roughly: <0.4 risk of fungal disease, 0.4–1.2 ideal, >1.6 stressed.
  * Leaf wetness hours — hours with RH ≥ 90% or temp within ~1°C of dewpoint.
  */
-export function humidityMetrics(current, hourly) {
+function humidityMetrics(current, hourly) {
   const idx = nearestHourIndex(hourly?.time || []);
   const nowTemp = current?.temperature_2m ?? hourly?.temperature_2m?.[idx];
   const nowRh = current?.relative_humidity_2m ?? hourly?.relative_humidity_2m?.[idx];
@@ -195,7 +197,7 @@ function vpd(tempC, rhPct) {
  * Longest upcoming stretch of hours with precipitation below `threshold` mm,
  * starting from now. Useful for scheduling spraying, transplanting, mowing.
  */
-export function rainFreeWindow(hourly, { threshold = 0.1, lookahead = 72 } = {}) {
+function rainFreeWindow(hourly, { threshold = 0.1, lookahead = 72 } = {}) {
   const times = hourly?.time || [];
   const precip = hourly?.precipitation || [];
   const probs = hourly?.precipitation_probability || [];
@@ -236,7 +238,7 @@ export function rainFreeWindow(hourly, { threshold = 0.1, lookahead = 72 } = {})
  *   avgMinC: number, avgMinF: number, years: number[]
  * } | null}
  */
-export function hardinessZone(daily) {
+function hardinessZone(daily) {
   const times = daily?.time || [];
   const mins = daily?.temperature_2m_min || [];
   if (!times.length) return null;
@@ -292,7 +294,7 @@ const CROPS = [
   { name: "Melon", min: 21 },
 ];
 
-export function plantingGuide(soil, frost) {
+function plantingGuide(soil, frost) {
   const surface = soil?.surfaceTemp ?? null;
   const frostSoon = frost && frost.level !== "none";
   return CROPS.map((crop) => {
@@ -328,10 +330,25 @@ function nearestHourIndex(times) {
  * Return the index of the first hourly sample at or after "now". Useful
  * when callers want to slice the forecast window for charts.
  */
-export function hourlyNowIndex(hourly) {
+function hourlyNowIndex(hourly) {
   return nearestHourIndex(hourly?.time || []);
 }
 
 function round(n) {
   return Math.round(n * 10) / 10;
 }
+
+window.frostRisk = frostRisk;
+window.growingDegreeDays = growingDegreeDays;
+window.soilSnapshot = soilSnapshot;
+window.dailyWaterDetail = dailyWaterDetail;
+window.waterBalance = waterBalance;
+window.nextRain = nextRain;
+window.sunSnapshot = sunSnapshot;
+window.humidityMetrics = humidityMetrics;
+window.rainFreeWindow = rainFreeWindow;
+window.hardinessZone = hardinessZone;
+window.plantingGuide = plantingGuide;
+window.hourlyNowIndex = hourlyNowIndex;
+
+})();

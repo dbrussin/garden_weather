@@ -5,7 +5,7 @@
  * @param {PositionOptions} [options]
  * @returns {Promise<{ lat: number, lon: number, accuracy: number }>}
  */
-export function getCurrentPosition(options = {}) {
+function getCurrentPosition(options = {}) {
   return new Promise((resolve, reject) => {
     if (!("geolocation" in navigator)) {
       reject(new Error("Geolocation is not supported in this browser."));
@@ -35,3 +35,5 @@ function translateError(err) {
       return new Error("Location error.");
   }
 }
+
+window.getCurrentPosition = getCurrentPosition;

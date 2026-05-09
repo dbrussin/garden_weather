@@ -3,13 +3,7 @@
 // Keep this file small: it only orchestrates. Feature logic lives in the
 // modules it imports.
 
-import { fetchForecast, fetchHistoricalMinima, reverseGeocode } from "./api.js";
-import { getCurrentPosition } from "./geo.js";
-import { addLocation } from "./storage.js";
-import { renderDashboard } from "./ui/dashboard.js";
-import { initLocations } from "./ui/locations.js";
-import { fmtCoords } from "./ui/format.js";
-import { getUnits, setUnits } from "./settings.js";
+(function () {
 
 const els = {
   useMine: document.getElementById("use-my-location"),
@@ -41,7 +35,7 @@ els.unitImperial.addEventListener("click", () => switchUnits("imperial"));
 els.coordGo.addEventListener("click", onManualCoord);
 // Enter key in any coord input triggers Go.
 for (const input of [els.coordLat, els.coordLon, els.coordName]) {
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") onManualCoord(); });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); onManualCoord(); } });
 }
 
 syncUnitButtons();
@@ -73,13 +67,20 @@ async function onManualCoord() {
     els.coordError.hidden = false;
     return;
   }
-  let name = nameInput;
-  if (!name) {
-    setStatus("Looking up location…");
-    const place = await reverseGeocode({ lat, lon });
-    name = place ? [place.name, place.admin1].filter(Boolean).join(", ") : `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  // Activate immediately with a coord-string name so the dashboard loads
+  // without waiting on the network. Geocode in the background and update
+  // the display name if it succeeds.
+  const coordName = nameInput || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  await activate({ lat, lon, name: coordName });
+  if (!nameInput) {
+    reverseGeocode({ lat, lon }).then((place) => {
+      if (!place) return;
+      if (active?.lat !== lat || active?.lon !== lon) return; // user moved on
+      const geocodedName = [place.name, place.admin1].filter(Boolean).join(", ");
+      active = { ...active, name: geocodedName };
+      renderCurrent(active);
+    }).catch(() => { /* non-fatal */ });
   }
-  await activate({ lat, lon, name });
 }
 
 function onSave() {
@@ -144,3 +145,5 @@ function escapeHtml(s) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
+
+})();

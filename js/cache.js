@@ -5,6 +5,8 @@
 // intentionally uncached so frost and watering advice never come from
 // stale data.
 
+(function () {
+
 const KEY = "garden_weather.cache.v1";
 
 function read() {
@@ -31,19 +33,25 @@ function write(store) {
  * @param {string} key     Lookup key within the namespace.
  * @param {number} ttlMs   Max age in ms. Use Infinity for no expiry.
  */
-export function getCached(ns, key, ttlMs) {
+function getCached(ns, key, ttlMs) {
   const entry = read()[ns]?.[key];
   if (!entry) return null;
   if (Number.isFinite(ttlMs) && Date.now() - entry.t > ttlMs) return null;
   return entry.v;
 }
 
-export function setCached(ns, key, value) {
+function setCached(ns, key, value) {
   const store = read();
   store[ns] = { ...(store[ns] || {}), [key]: { v: value, t: Date.now() } };
   write(store);
 }
 
-export function clearCache() {
+function clearCache() {
   try { localStorage.removeItem(KEY); } catch {}
 }
+
+window.getCached = getCached;
+window.setCached = setCached;
+window.clearCache = clearCache;
+
+})();

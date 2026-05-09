@@ -6,6 +6,8 @@
 // - lat/lon: numbers, rounded to 4 decimals for stability
 // - createdAt: ISO timestamp
 
+(function () {
+
 const KEY = "garden_weather.locations.v1";
 
 function read() {
@@ -23,11 +25,11 @@ function write(list) {
   localStorage.setItem(KEY, JSON.stringify(list));
 }
 
-export function listLocations() {
+function listLocations() {
   return read();
 }
 
-export function addLocation({ name, lat, lon }) {
+function addLocation({ name, lat, lon }) {
   const list = read();
   const rounded = { lat: round(lat), lon: round(lon) };
   const existing = list.find((l) => l.lat === rounded.lat && l.lon === rounded.lon);
@@ -44,11 +46,11 @@ export function addLocation({ name, lat, lon }) {
   return entry;
 }
 
-export function removeLocation(id) {
+function removeLocation(id) {
   write(read().filter((l) => l.id !== id));
 }
 
-export function renameLocation(id, name) {
+function renameLocation(id, name) {
   const list = read();
   const entry = list.find((l) => l.id === id);
   if (!entry) return null;
@@ -61,7 +63,7 @@ export function renameLocation(id, name) {
  * Update any subset of { name, lat, lon } on a saved location.
  * Lat/lon are re-rounded to 4 decimals for stability.
  */
-export function updateLocation(id, patch = {}) {
+function updateLocation(id, patch = {}) {
   const list = read();
   const entry = list.find((l) => l.id === id);
   if (!entry) return null;
@@ -78,3 +80,11 @@ export function updateLocation(id, patch = {}) {
 function round(n) {
   return Math.round(n * 10_000) / 10_000;
 }
+
+window.listLocations = listLocations;
+window.addLocation = addLocation;
+window.removeLocation = removeLocation;
+window.renameLocation = renameLocation;
+window.updateLocation = updateLocation;
+
+})();

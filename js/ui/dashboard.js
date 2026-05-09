@@ -1,33 +1,13 @@
 // Render gardener metrics into the dashboard panels.
 // Each panel is wired by id in index.html.
 
-import {
-  frostRisk,
-  growingDegreeDays,
-  soilSnapshot,
-  waterBalance,
-  dailyWaterDetail,
-  nextRain,
-  sunSnapshot,
-  humidityMetrics,
-  rainFreeWindow,
-  hardinessZone,
-  plantingGuide,
-  hourlyNowIndex,
-} from "../metrics.js";
-import { buildAdvice } from "../advice.js";
-import {
-  fmtNum, fmtTemp, fmtMoisture, fmtTime, fmtDay, fmtPrecip, fmtWind,
-  cToF, mmToIn, tempUnit, precipUnit,
-} from "./format.js";
-import { getUnits } from "../settings.js";
-import { lineChart, barChart } from "./chart.js";
+(function () {
 
 /**
  * @param {object} forecast  Raw Open-Meteo forecast response (metric).
  * @param {object} [historical]  Optional archive daily {time, temperature_2m_min}.
  */
-export function renderDashboard(forecast, historical) {
+function renderDashboard(forecast, historical) {
   document.getElementById("dashboard").hidden = false;
   document.getElementById("advice").hidden = false;
 
@@ -372,3 +352,7 @@ function renderAdvice(advice) {
     <ul>${advice.bullets.map((b) => `<li>${b}</li>`).join("")}</ul>
   `;
 }
+
+window.renderDashboard = renderDashboard;
+
+})();
