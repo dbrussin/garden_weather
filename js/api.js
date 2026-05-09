@@ -8,7 +8,7 @@
 // in localStorage via cache.js. The forecast is never cached — gardeners
 // need current frost and watering data.
 
-import { getCached, setCached } from "./cache.js";
+(function () {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ARCHIVE_TTL_MS = 30 * DAY_MS;
@@ -83,7 +83,7 @@ const DAILY_VARS = [
  * @param {{ lat: number, lon: number }} opts
  * @returns {Promise<object>} Raw Open-Meteo response (metric).
  */
-export async function fetchForecast({ lat, lon }) {
+async function fetchForecast({ lat, lon }) {
   const coordKey = `${lat.toFixed(3)},${lon.toFixed(3)}`;
   const today = new Date().toISOString().slice(0, 10);
 
@@ -154,7 +154,7 @@ export async function fetchForecast({ lat, lon }) {
  * @param {{ lat: number, lon: number, years?: number }} opts
  * @returns {Promise<{ time: string[], temperature_2m_min: number[] }>}
  */
-export async function fetchHistoricalMinima({ lat, lon, years = 5 }) {
+async function fetchHistoricalMinima({ lat, lon, years = 5 }) {
   const end = new Date();
   // ERA5 has ~5-day ingest lag; use last-year's Dec 31 as the end to be safe.
   const endYear = end.getFullYear() - 1;
@@ -183,7 +183,7 @@ export async function fetchHistoricalMinima({ lat, lon, years = 5 }) {
  * Reverse geocode a coordinate to a human-readable place name.
  * Falls back gracefully — returns null if the service is unreachable.
  */
-export async function reverseGeocode({ lat, lon }) {
+async function reverseGeocode({ lat, lon }) {
   const cacheKey = `${lat.toFixed(3)},${lon.toFixed(3)}`;
   const hit = getCached("geo", cacheKey, Infinity);
   if (hit) return hit;
@@ -207,3 +207,9 @@ export async function reverseGeocode({ lat, lon }) {
     return null;
   }
 }
+
+window.fetchForecast = fetchForecast;
+window.fetchHistoricalMinima = fetchHistoricalMinima;
+window.reverseGeocode = reverseGeocode;
+
+})();

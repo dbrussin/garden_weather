@@ -3,13 +3,7 @@
 // Keep this file small: it only orchestrates. Feature logic lives in the
 // modules it imports.
 
-import { fetchForecast, fetchHistoricalMinima, reverseGeocode } from "./api.js";
-import { getCurrentPosition } from "./geo.js";
-import { addLocation } from "./storage.js";
-import { renderDashboard } from "./ui/dashboard.js";
-import { initLocations } from "./ui/locations.js";
-import { fmtCoords } from "./ui/format.js";
-import { getUnits, setUnits } from "./settings.js";
+(function () {
 
 const els = {
   useMine: document.getElementById("use-my-location"),
@@ -151,3 +145,5 @@ function escapeHtml(s) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
+
+})();

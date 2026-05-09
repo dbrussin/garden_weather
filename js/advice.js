@@ -2,9 +2,9 @@
 // Inputs come from metrics.js; outputs are plain data for the UI to render.
 // Display strings are unit-aware via ui/format.js.
 
-import { fmtTemp, fmtPrecip, fmtNum } from "./ui/format.js";
+(function () {
 
-export function buildAdvice({ frost, soil, water, rain, sun, humidity, dryWindow }) {
+function buildAdvice({ frost, soil, water, rain, sun, humidity, dryWindow }) {
   const bullets = [];
   let level = "ok";
   let headline = "Good gardening day.";
@@ -73,3 +73,7 @@ function daysUntil(iso) {
   if (!d) return Infinity;
   return (d - Date.now()) / 86_400_000;
 }
+
+window.buildAdvice = buildAdvice;
+
+})();

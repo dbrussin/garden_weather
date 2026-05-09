@@ -4,6 +4,8 @@
 // Open-Meteo in metric (°C, mm, m/s); display conversion happens in
 // ui/format.js so metrics.js thresholds can stay unit-free.
 
+(function () {
+
 const KEY = "garden_weather.settings.v1";
 const DEFAULTS = { units: "metric" }; // "metric" | "imperial"
 
@@ -26,22 +28,29 @@ function write(settings) {
 
 let state = read();
 
-export function getSettings() {
+function getSettings() {
   return { ...state };
 }
 
-export function getUnits() {
+function getUnits() {
   return state.units;
 }
 
-export function setUnits(units) {
+function setUnits(units) {
   if (units !== "metric" && units !== "imperial") return;
   state = { ...state, units };
   write(state);
   for (const fn of listeners) fn(state);
 }
 
-export function onSettingsChange(fn) {
+function onSettingsChange(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
+
+window.getSettings = getSettings;
+window.getUnits = getUnits;
+window.setUnits = setUnits;
+window.onSettingsChange = onSettingsChange;
+
+})();

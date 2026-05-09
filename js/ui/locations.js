@@ -1,14 +1,13 @@
 // Saved-locations list UI.
 // Wires up the <ul id="saved-list"> and exposes a render() function.
 
-import { listLocations, removeLocation, updateLocation } from "../storage.js";
-import { fmtCoords } from "./format.js";
+(function () {
 
 /**
  * @param {(loc: { id: string, name: string, lat: number, lon: number }) => void} onSelect
  *   Called when the user clicks a saved location.
  */
-export function initLocations(onSelect) {
+function initLocations(onSelect) {
   const list = document.getElementById("saved-list");
   const empty = document.getElementById("saved-empty");
 
@@ -108,3 +107,7 @@ function attr(s) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
+
+window.initLocations = initLocations;
+
+})();
