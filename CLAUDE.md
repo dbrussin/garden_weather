@@ -5,7 +5,8 @@ soil temperature, soil moisture, frost risk, ET/water balance, UV, and growing
 degree days, plus an "is today a good gardening day?" verdict.
 
 Static site, **no build step**. Deployed to GitHub Pages by serving the repo
-root. Open `index.html` locally or via `python3 -m http.server` to develop.
+root. Open `index.html` directly from the filesystem (`file://`) or via
+`python3 -m http.server` to develop.
 
 ## Repo map
 
@@ -20,26 +21,57 @@ js/
   api.js                Open-Meteo fetch (forecast + reverse geocode)
   geo.js                navigator.geolocation wrapper
   storage.js            Saved locations in localStorage
+  cache.js              TTL cache backed by localStorage
+  settings.js           User preferences (units) in localStorage
   metrics.js            Pure functions: frost, GDD, soil, water, sun
   advice.js             Combine metrics into gardener verdict + bullets
   ui/
     dashboard.js        Render forecast panels
     locations.js        Render saved locations list
     format.js           Number / date / coordinate formatters
+    chart.js            SVG line and bar chart helpers
 ```
 
 Every file is intentionally small (well under a few hundred lines) so a Claude
 Code session can read the whole file cheaply and edit surgically. If a file
 grows past ~300 lines, split it.
 
+## Module system
+
+The JS files use **plain `<script>` tags** (no ES modules, no bundler). Each
+file is an IIFE that exposes its public API on `window`:
+
+```js
+(function () {
+  // private helpers stay here
+  function publicFn() { ... }
+  window.publicFn = publicFn;
+})();
+```
+
+`index.html` loads the scripts in dependency order (bottom of `<body>`):
+
+```
+cache → settings → storage → geo → metrics → api
+→ ui/format → ui/chart → advice → ui/dashboard → ui/locations → app
+```
+
+**Why no ES modules?** Browsers block `type="module"` on `file://` origins, so
+the app would silently break when opened directly from the filesystem. Plain
+scripts work everywhere.
+
+**Adding a function to a file:** declare it inside the IIFE and add
+`window.myFn = myFn;` at the bottom. Other files can call it immediately since
+scripts execute in order.
+
 ## Data flow
 
 1. `app.js` gets a coordinate — either from `geo.js` (browser geolocation) or
    from a click in the saved locations list (`ui/locations.js` → `storage.js`).
-2. `app.js` calls `api.fetchForecast({ lat, lon })` for the Open-Meteo bundle
-   (current + hourly + daily, with 3 past days so we can compute trailing
+2. `app.js` calls `fetchForecast({ lat, lon })` for the Open-Meteo bundle
+   (current + hourly + daily, with past days so we can compute trailing
    metrics like GDD and water balance).
-3. `ui/dashboard.renderDashboard(forecast)` derives metrics via `metrics.js`,
+3. `renderDashboard(forecast)` derives metrics via `metrics.js`,
    builds the verdict via `advice.js`, and writes each panel's `.panel-body`.
 
 `metrics.js` and `advice.js` are **pure**. They take the raw API response (or
@@ -61,7 +93,7 @@ The request uses `past_days=3` and `forecast_days=7`. Trailing metrics
 
 ## Saved locations
 
-`storage.js` is the only module that touches `localStorage`. Key:
+`storage.js` is the only file that touches `localStorage` for locations. Key:
 `garden_weather.locations.v1`. Entry shape:
 
 ```js
@@ -75,6 +107,7 @@ near-identical coords. Bump the key to `.v2` if the shape changes and migrate.
 
 1. Add the field(s) to `HOURLY_VARS` or `DAILY_VARS` in `js/api.js`.
 2. Write a pure derivation in `js/metrics.js` (or extend an existing one).
+   Expose it: `window.myMetric = myMetric;` at the bottom of the IIFE.
 3. Render it in `js/ui/dashboard.js` — either a new panel (add a matching
    `<article class="card panel">` to `index.html`) or an extra line in an
    existing panel.
@@ -98,13 +131,14 @@ near-identical coords. Bump the key to `.v2` if the shape changes and migrate.
 
 ## Local dev
 
+Open `index.html` directly in a browser — it works on `file://`. Geolocation
+(`Use my location`) requires `http://localhost` or `https://`, so for that
+feature run a local server:
+
 ```
 python3 -m http.server 8000
 # then open http://localhost:8000
 ```
-
-Geolocation requires `http://localhost` or `https://` — `file://` is blocked
-by most browsers.
 
 ## Deploy (GitHub Pages)
 
