@@ -17,12 +17,17 @@ const els = {
   coordLon: document.getElementById("coord-lon"),
   coordName: document.getElementById("coord-name"),
   coordError: document.getElementById("coord-error"),
+  tempestStationId: document.getElementById("tempest-station-id"),
+  tempestToken: document.getElementById("tempest-token"),
+  tempestSave: document.getElementById("tempest-save"),
+  tempestClear: document.getElementById("tempest-clear"),
+  tempestStatus: document.getElementById("tempest-status"),
 };
 
 // The location currently displayed in the dashboard.
 let active = null; // { lat, lon, name }
-// Cache of forecast + historical data so unit toggles rerender without refetch.
-let cache = { forecast: null, historical: null, key: null };
+// Cache of forecast + historical + tempest data so unit toggles rerender without refetch.
+let cache = { forecast: null, historical: null, tempest: null, key: null };
 
 const locations = initLocations((loc) => {
   activate({ lat: loc.lat, lon: loc.lon, name: loc.name });
@@ -37,6 +42,9 @@ els.coordGo.addEventListener("click", onManualCoord);
 for (const input of [els.coordLat, els.coordLon, els.coordName]) {
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); onManualCoord(); } });
 }
+
+els.tempestSave.addEventListener("click", onTempestSave);
+els.tempestClear.addEventListener("click", onTempestClear);
 
 syncUnitButtons();
 
@@ -98,15 +106,29 @@ async function activate({ lat, lon, name }) {
   const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
   try {
     const forecast = await fetchForecast({ lat, lon });
-    cache = { forecast, historical: null, key };
-    renderDashboard(forecast, null);
+    cache = { forecast, historical: null, tempest: null, key };
+    renderDashboard(forecast, null, null);
     setStatus("");
+    loadTempestConfigUI(); // populate form with this location's saved config
+
+    // Tempest actuals fetch — non-blocking, updates water panel when ready.
+    const tempestCfg = getTempestConfig(lat, lon);
+    if (tempestCfg) {
+      fetchTempestDailyStats({ stationId: tempestCfg.stationId, token: tempestCfg.token, lat })
+        .then((tempest) => {
+          if (cache.key !== key) return;
+          cache.tempest = tempest;
+          renderDashboard(forecast, cache.historical, tempest);
+        })
+        .catch(() => { /* non-fatal — Open-Meteo data used as fallback */ });
+    }
+
     // Historical data for hardiness zone loads after — it's slower and the
     // rest of the dashboard shouldn't wait on it.
     fetchHistoricalMinima({ lat, lon }).then((historical) => {
-      if (cache.key !== key) return; // user moved on
+      if (cache.key !== key) return;
       cache.historical = historical;
-      renderDashboard(forecast, historical);
+      renderDashboard(forecast, historical, cache.tempest);
     }).catch(() => { /* non-fatal */ });
   } catch (err) {
     setStatus(err.message || "Forecast failed.", true);
@@ -117,7 +139,71 @@ function switchUnits(units) {
   if (units === getUnits()) return;
   setUnits(units);
   syncUnitButtons();
-  if (cache.forecast) renderDashboard(cache.forecast, cache.historical);
+  if (cache.forecast) renderDashboard(cache.forecast, cache.historical, cache.tempest);
+}
+
+// ---------------------------------------------------------------------------
+// Tempest config UI
+
+function loadTempestConfigUI() {
+  if (!active) return;
+  const cfg = getTempestConfig(active.lat, active.lon);
+  els.tempestStationId.value = cfg ? cfg.stationId : "";
+  els.tempestToken.value = cfg ? cfg.token : "";
+  // Open the details element if a config is already stored for this location.
+  const details = document.getElementById("tempest-config");
+  if (details && cfg) details.open = true;
+}
+
+function onTempestSave() {
+  const stationId = els.tempestStationId.value.trim();
+  const token = els.tempestToken.value.trim();
+  els.tempestStatus.hidden = true;
+
+  if (!active) {
+    els.tempestStatus.textContent = "Select a location first.";
+    els.tempestStatus.hidden = false;
+    return;
+  }
+
+  if (!stationId || !token) {
+    els.tempestStatus.textContent = "Enter both a station ID and an API token.";
+    els.tempestStatus.hidden = false;
+    return;
+  }
+
+  setTempestConfig({ lat: active.lat, lon: active.lon, stationId, token });
+  els.tempestStatus.textContent = "Saved for this location. Fetching data…";
+  els.tempestStatus.style.color = "var(--accent)";
+  els.tempestStatus.hidden = false;
+
+  // Fetch immediately if a location is active.
+  if (cache.forecast && cache.key) {
+    fetchTempestDailyStats({ stationId, token, lat: active.lat })
+      .then((tempest) => {
+        cache.tempest = tempest;
+        renderDashboard(cache.forecast, cache.historical, tempest);
+        els.tempestStatus.textContent = "Saved and applied.";
+      })
+      .catch((err) => {
+        els.tempestStatus.textContent = `Saved, but fetch failed: ${err.message || "network error"}`;
+        els.tempestStatus.style.color = "var(--danger)";
+      });
+  }
+}
+
+function onTempestClear() {
+  if (!active) return;
+  clearTempestConfig(active.lat, active.lon);
+  els.tempestStationId.value = "";
+  els.tempestToken.value = "";
+  els.tempestStatus.textContent = "Tempest config cleared for this location.";
+  els.tempestStatus.style.color = "var(--ink-soft)";
+  els.tempestStatus.hidden = false;
+  if (cache.forecast) {
+    cache.tempest = null;
+    renderDashboard(cache.forecast, cache.historical, null);
+  }
 }
 
 function syncUnitButtons() {

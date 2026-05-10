@@ -55,6 +55,26 @@
         </form>
       </details>
       <div id="location-status" class="status" role="status" aria-live="polite"></div>
+
+      <details class="manual-coord" id="tempest-config">
+        <summary>Tempest weather station (optional)</summary>
+        <form id="tempest-form" class="edit-form" autocomplete="off">
+          <div class="field">
+            <label for="tempest-station-id">Station ID</label>
+            <input id="tempest-station-id" type="text" inputmode="numeric" placeholder="12345" style="min-width:8ch" />
+          </div>
+          <div class="field">
+            <label for="tempest-token">API token</label>
+            <input id="tempest-token" type="password" placeholder="••••••••" style="min-width:18ch" />
+          </div>
+          <div class="edit-actions">
+            <button type="button" id="tempest-save">Save</button>
+            <button type="button" id="tempest-clear" class="ghost">Clear</button>
+          </div>
+          <div id="tempest-status" class="edit-error" hidden></div>
+        </form>
+        <p class="tempest-hint">When configured, past ET and precipitation in the water balance chart will use readings from your Tempest station instead of the Open-Meteo model.</p>
+      </details>
     </section>
 
     <section id="saved-locations" class="card" aria-labelledby="saved-title">
@@ -74,13 +94,17 @@
         <article id="panel-now" class="card panel"><h3>Right now</h3><div class="panel-body"></div></article>
         <article id="panel-frost" class="card panel"><h3>Frost risk</h3><div class="panel-body"></div></article>
         <article id="panel-soil" class="card panel"><h3>Soil</h3><div class="panel-body"></div></article>
-        <article id="panel-water" class="card panel"><h3>Water balance</h3><div class="panel-body"></div></article>
         <article id="panel-sun" class="card panel"><h3>Sun &amp; UV</h3><div class="panel-body"></div></article>
         <article id="panel-gdd" class="card panel"><h3>Growing degree days</h3><div class="panel-body"></div></article>
         <article id="panel-humidity" class="card panel"><h3>Humidity &amp; disease</h3><div class="panel-body"></div></article>
         <article id="panel-dry" class="card panel"><h3>Dry work window</h3><div class="panel-body"></div></article>
         <article id="panel-zone" class="card panel"><h3>Hardiness zone</h3><div class="panel-body"></div></article>
       </div>
+
+      <article id="panel-water" class="card">
+        <h3>Water balance <span id="water-source-label" class="water-panel-source"></span></h3>
+        <div class="panel-body"></div>
+      </article>
 
       <article id="panel-planting" class="card">
         <h3>Planting guide</h3>
@@ -110,7 +134,7 @@
   </main>
 
   <footer class="app-footer">
-    <small>Data from <a href="https://open-meteo.com" rel="noopener">Open-Meteo</a>. No tracking.</small>
+    <small>Forecast from <a href="https://open-meteo.com" rel="noopener">Open-Meteo</a>. Station actuals from <a href="https://tempestwx.com" rel="noopener">WeatherFlow Tempest</a> when configured. No tracking.</small>
   </footer>
 
   <script src="./js/cache.js"></script>
@@ -119,6 +143,7 @@
   <script src="./js/geo.js"></script>
   <script src="./js/metrics.js"></script>
   <script src="./js/api.js"></script>
+  <script src="./js/tempest.js"></script>
   <script src="./js/ui/format.js"></script>
   <script src="./js/ui/chart.js"></script>
   <script src="./js/advice.js"></script>

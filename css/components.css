@@ -351,6 +351,64 @@ button.ghost {
   border-top: 1px solid var(--line);
 }
 
+/* Full-width water balance chart wrapper */
+.water-chart-wrap {
+  margin-bottom: 0.75rem;
+}
+
+.water-chart-wrap svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Source + Tempest badge row */
+.water-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.water-source-badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.water-source-badge.water-source-meteo {
+  background: var(--muted-soft);
+  color: var(--ink-soft);
+}
+
+/* Tempest dot in table row */
+.water-tempest-dot {
+  font-size: 0.55rem;
+  color: var(--accent);
+  vertical-align: middle;
+  margin-left: 0.2rem;
+}
+
+/* Water panel source label in heading */
+.water-panel-source {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--ink-soft);
+  margin-left: 0.4rem;
+}
+
+/* Tempest config hint text */
+.tempest-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
 /* Charts */
 .chart {
   width: 100%;

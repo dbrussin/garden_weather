@@ -69,23 +69,55 @@ function soilSnapshot(hourly) {
 /**
  * Per-day ET, precipitation, and deficit for the last `histDays` and next
  * `futureDays` (including today). Positive deficit = more ET than rain.
+ *
+ * When `tempestActuals` is provided (array of { date, et, precip } from the
+ * Tempest API), those values override the Open-Meteo historical values for
+ * matching dates. If a Tempest field is null, the Open-Meteo value is kept.
+ *
+ * @param {object} daily  Raw Open-Meteo daily object.
+ * @param {Array<{ date: string, et: number|null, precip: number|null }>|null} tempestActuals
+ * @param {{ histDays?: number, futureDays?: number }} opts
  */
-function dailyWaterDetail(daily, { histDays = 5, futureDays = 5 } = {}) {
+function dailyWaterDetail(daily, tempestActuals, { histDays = 5, futureDays = 5 } = {}) {
+  // Support legacy two-arg call: dailyWaterDetail(daily, opts)
+  if (tempestActuals && !Array.isArray(tempestActuals)) {
+    const opts = tempestActuals;
+    tempestActuals = null;
+    histDays = opts.histDays ?? histDays;
+    futureDays = opts.futureDays ?? futureDays;
+  }
+
   const times = daily?.time || [];
   const et = daily?.et0_fao_evapotranspiration || [];
   const precip = daily?.precipitation_sum || [];
   const precipProb = daily?.precipitation_probability_max || [];
 
+  // Build a lookup map for Tempest actuals by date string.
+  const tempestByDate = new Map();
+  if (Array.isArray(tempestActuals)) {
+    for (const obs of tempestActuals) {
+      if (obs?.date) tempestByDate.set(obs.date, obs);
+    }
+  }
+
   const today = new Date().toISOString().slice(0, 10);
   const todayIdx = times.findIndex((t) => t?.slice(0, 10) === today);
-  if (todayIdx < 0) return { historical: [], projected: [], cumulative: 0 };
+  if (todayIdx < 0) return { historical: [], projected: [], cumulative: 0, hasTempest: false };
 
   const historical = [];
   const histStart = Math.max(0, todayIdx - histDays);
   for (let i = histStart; i < todayIdx; i++) {
-    const etv = et[i] ?? 0;
-    const pv = precip[i] ?? 0;
-    historical.push({ date: times[i], et: round(etv), precip: round(pv), deficit: round(etv - pv) });
+    const dateStr = times[i]?.slice(0, 10);
+    const tObs = tempestByDate.get(dateStr);
+    const etv = (tObs?.et != null ? tObs.et : et[i]) ?? 0;
+    const pv = (tObs?.precip != null ? tObs.precip : precip[i]) ?? 0;
+    historical.push({
+      date: times[i],
+      et: round(etv),
+      precip: round(pv),
+      deficit: round(etv - pv),
+      fromTempest: !!(tObs?.et != null || tObs?.precip != null),
+    });
   }
 
   const projected = [];
@@ -103,7 +135,11 @@ function dailyWaterDetail(daily, { histDays = 5, futureDays = 5 } = {}) {
 
   const all = [...historical, ...projected];
   const cumulative = round(all.reduce((s, d) => s + d.deficit, 0));
-  return { historical, projected, cumulative };
+  // Only flag hasTempest when at least one day has a real (non-null) Tempest value.
+  const hasTempest = Array.from(tempestByDate.values()).some(
+    (obs) => obs.precip != null || obs.et != null
+  );
+  return { historical, projected, cumulative, hasTempest };
 }
 
 function waterBalance(daily, { window = 7 } = {}) {
@@ -305,6 +341,60 @@ function plantingGuide(soil, frost) {
   });
 }
 
+/**
+ * FAO-56 Penman-Monteith reference ET₀ (mm/day) from Tempest daily summary columns.
+ *
+ * Solar radiation column gives the daily PEAK (W/m²), not the average. We
+ * convert it to a daily total using a sinusoidal daylight model and the
+ * computed astronomical day length for the given latitude and day-of-year.
+ *
+ * Returns null if any required input is absent or non-finite.
+ */
+function calcEt0PM({ tmax, tmin, rhHigh, rhLow, windAvgMs, solarPeakWm2,
+                     pressureHighMb, pressureLowMb, lat, doy }) {
+  if ([tmax, tmin, rhHigh, rhLow, windAvgMs, solarPeakWm2,
+       pressureHighMb, pressureLowMb, lat, doy]
+      .some((v) => v == null || !Number.isFinite(v))) return null;
+
+  const T = (tmax + tmin) / 2;
+  const rhMean = (rhHigh + rhLow) / 2;
+  const P = (pressureHighMb + pressureLowMb) / 2 / 10; // mb → kPa
+
+  const eSat = (t) => 0.6108 * Math.exp(17.27 * t / (t + 237.3));
+  const es = (eSat(tmax) + eSat(tmin)) / 2;
+  const ea = (rhMean / 100) * es;
+  const delta = 4098 * eSat(T) / Math.pow(T + 237.3, 2);
+  const gamma = 0.000665 * P;
+
+  // Extraterrestrial radiation Ra (MJ/m²/day) and daylight hours N
+  const phi = lat * Math.PI / 180;
+  const dr = 1 + 0.033 * Math.cos(2 * Math.PI / 365 * doy);
+  const sdec = 0.409 * Math.sin(2 * Math.PI / 365 * doy - 1.39);
+  const omegas = Math.acos(Math.max(-1, Math.min(1, -Math.tan(phi) * Math.tan(sdec))));
+  const Ra = (24 * 60 / Math.PI) * 0.0820 * dr *
+    (omegas * Math.sin(phi) * Math.sin(sdec) + Math.cos(phi) * Math.cos(sdec) * Math.sin(omegas));
+  const N = (24 / Math.PI) * omegas; // daylight hours
+
+  // Rs from peak: sinusoidal integral over daylight period → MJ/m²/day
+  const Rs = solarPeakWm2 * (2 / Math.PI) * N * 3600 / 1e6;
+
+  // Net radiation
+  const Rso = 0.75 * Ra;
+  const Rns = 0.77 * Rs;
+  const sigma = 4.903e-9; // MJ/m²/day/K⁴
+  const Rnl = sigma *
+    ((Math.pow(tmax + 273.16, 4) + Math.pow(tmin + 273.16, 4)) / 2) *
+    (0.34 - 0.14 * Math.sqrt(Math.max(0, ea))) *
+    Math.max(0, 1.35 * Rs / Math.max(Rso, 0.01) - 0.35);
+  const Rn = Rns - Rnl;
+
+  const u2 = windAvgMs;
+  const et0 = (0.408 * delta * Rn + gamma * (900 / (T + 273)) * u2 * (es - ea)) /
+              (delta + gamma * (1 + 0.34 * u2));
+
+  return Math.max(0, Math.round(et0 * 10) / 10);
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 
@@ -338,6 +428,7 @@ function round(n) {
   return Math.round(n * 10) / 10;
 }
 
+window.calcEt0PM = calcEt0PM;
 window.frostRisk = frostRisk;
 window.growingDegreeDays = growingDegreeDays;
 window.soilSnapshot = soilSnapshot;
