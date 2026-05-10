@@ -6,15 +6,16 @@
 /**
  * @param {object} forecast  Raw Open-Meteo forecast response (metric).
  * @param {object} [historical]  Optional archive daily {time, temperature_2m_min}.
+ * @param {Array<{ date: string, et: number|null, precip: number|null }>|null} [tempestActuals]
  */
-function renderDashboard(forecast, historical) {
+function renderDashboard(forecast, historical, tempestActuals) {
   document.getElementById("dashboard").hidden = false;
   document.getElementById("advice").hidden = false;
 
   const frost = frostRisk(forecast.daily);
   const soil = soilSnapshot(forecast.hourly);
   const water = waterBalance(forecast.daily);
-  const waterDetail = dailyWaterDetail(forecast.daily);
+  const waterDetail = dailyWaterDetail(forecast.daily, tempestActuals || null);
   const rain = nextRain(forecast.daily);
   const sun = sunSnapshot(forecast.daily);
   const gdd = growingDegreeDays(forecast.daily);
@@ -85,21 +86,52 @@ function renderWater(waterDetail, rain) {
   const imperial = getUnits() === "imperial";
   const unit = imperial ? "in" : "mm";
 
+  function toDisplay(mm) {
+    return imperial ? mmToIn(mm) : mm;
+  }
+
   function fmtWaterVal(mm) {
-    const v = imperial ? mmToIn(mm) : mm;
-    return fmtNum(v, imperial ? 2 : 1);
+    return fmtNum(toDisplay(mm), imperial ? 2 : 1);
   }
 
   function deficitCell(deficit) {
-    const v = imperial ? mmToIn(deficit) : deficit;
+    const v = toDisplay(deficit);
     const cls = v > 0.05 ? "num water-deficit" : v < -0.05 ? "num water-surplus" : "num";
     const sign = v > 0.05 ? "+" : "";
     return `<td class="${cls}">${sign}${fmtNum(v, imperial ? 2 : 1)}</td>`;
   }
 
+  // Build the chart data array: historical (actuals) then projected (forecast).
+  const histDays = (waterDetail.historical || []).map((d) => ({
+    date: d.date,
+    et: toDisplay(d.et),
+    precip: toDisplay(d.precip),
+    projected: false,
+  }));
+  const projDays = (waterDetail.projected || []).map((d) => ({
+    date: d.date,
+    et: toDisplay(d.et),
+    precip: toDisplay(d.precip),
+    precipProb: d.precipProb,
+    projected: true,
+  }));
+  const allChartDays = [...histDays, ...projDays];
+
+  const chartSvg = waterBalanceChart({
+    days: allChartDays,
+    unit,
+    histCount: histDays.length,
+  });
+
+  // Source label
+  const sourceNote = waterDetail.hasTempest
+    ? `<span class="water-source-badge">Actuals: Tempest</span>`
+    : `<span class="water-source-badge water-source-meteo">Actuals: Open-Meteo</span>`;
+
+  // Summary table rows
   const histRows = (waterDetail.historical || []).map((d) => `
     <tr class="water-hist">
-      <td>${fmtDay(d.date)}</td>
+      <td>${fmtDay(d.date)}${d.fromTempest ? " <span class='water-tempest-dot' title='Tempest actual'>●</span>" : ""}</td>
       <td class="num">${fmtWaterVal(d.et)}</td>
       <td class="num">${fmtWaterVal(d.precip)}</td>
       ${deficitCell(d.deficit)}
@@ -107,17 +139,17 @@ function renderWater(waterDetail, rain) {
 
   const projRows = (waterDetail.projected || []).map((d, i) => {
     const isToday = i === 0;
-    const probStr = d.precipProb != null ? `<span class="water-prob">${d.precipProb}%</span>` : "";
+    const probStr = d.precipProb != null ? ` <span class="water-prob">${d.precipProb}%</span>` : "";
     return `
     <tr class="${isToday ? "water-today" : "water-proj"}">
       <td>${fmtDay(d.date)}${isToday ? " <span class='water-today-label'>today</span>" : ""}</td>
       <td class="num">${fmtWaterVal(d.et)}</td>
-      <td class="num">${fmtWaterVal(d.precip)} ${probStr}</td>
+      <td class="num">${fmtWaterVal(d.precip)}${probStr}</td>
       ${deficitCell(d.deficit)}
     </tr>`;
   }).join("");
 
-  const cum = imperial ? mmToIn(waterDetail.cumulative ?? 0) : (waterDetail.cumulative ?? 0);
+  const cum = toDisplay(waterDetail.cumulative ?? 0);
   const cumSign = cum > 0.05 ? "+" : "";
   const cumCls = cum > 0.05 ? "water-deficit" : cum < -0.05 ? "water-surplus" : "";
   const rainNote = rain
@@ -125,13 +157,15 @@ function renderWater(waterDetail, rain) {
     : "No rain in 7-day forecast.";
 
   el.innerHTML = `
+    <div class="water-chart-wrap">${chartSvg}</div>
+    <div class="water-meta">${sourceNote}</div>
     <table class="water-table">
       <thead>
         <tr>
           <th>Day</th>
           <th class="num">ET (${unit})</th>
           <th class="num">Rain</th>
-          <th class="num">Deficit</th>
+          <th class="num">±</th>
         </tr>
       </thead>
       <tbody>
@@ -141,12 +175,12 @@ function renderWater(waterDetail, rain) {
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="3" class="water-cum-label">10-day cumulative</td>
+          <td colspan="3" class="water-cum-label">10-day cumulative deficit</td>
           <td class="num ${cumCls}">${cumSign}${fmtNum(cum, imperial ? 2 : 1)} ${unit}</td>
         </tr>
       </tfoot>
     </table>
-    <div class="sub" style="margin-top:0.4rem">${rainNote}</div>
+    <div class="sub" style="margin-top:0.5rem">${rainNote}</div>
   `;
 }
 

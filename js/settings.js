@@ -48,9 +48,44 @@ function onSettingsChange(fn) {
   return () => listeners.delete(fn);
 }
 
+// ---------------------------------------------------------------------------
+// Tempest station configuration
+
+const TEMPEST_KEY = "garden_weather.tempest.v1";
+
+function getTempestConfig() {
+  try {
+    const raw = localStorage.getItem(TEMPEST_KEY);
+    if (!raw) return null;
+    const { stationId, token } = JSON.parse(raw);
+    if (!stationId || !token) return null;
+    return { stationId: String(stationId), token: String(token) };
+  } catch {
+    return null;
+  }
+}
+
+function setTempestConfig({ stationId, token } = {}) {
+  if (!stationId || !token) {
+    localStorage.removeItem(TEMPEST_KEY);
+    return;
+  }
+  localStorage.setItem(TEMPEST_KEY, JSON.stringify({
+    stationId: String(stationId).trim(),
+    token: String(token).trim(),
+  }));
+}
+
+function clearTempestConfig() {
+  localStorage.removeItem(TEMPEST_KEY);
+}
+
 window.getSettings = getSettings;
 window.getUnits = getUnits;
 window.setUnits = setUnits;
 window.onSettingsChange = onSettingsChange;
+window.getTempestConfig = getTempestConfig;
+window.setTempestConfig = setTempestConfig;
+window.clearTempestConfig = clearTempestConfig;
 
 })();

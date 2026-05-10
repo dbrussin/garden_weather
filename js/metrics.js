@@ -69,23 +69,55 @@ function soilSnapshot(hourly) {
 /**
  * Per-day ET, precipitation, and deficit for the last `histDays` and next
  * `futureDays` (including today). Positive deficit = more ET than rain.
+ *
+ * When `tempestActuals` is provided (array of { date, et, precip } from the
+ * Tempest API), those values override the Open-Meteo historical values for
+ * matching dates. If a Tempest field is null, the Open-Meteo value is kept.
+ *
+ * @param {object} daily  Raw Open-Meteo daily object.
+ * @param {Array<{ date: string, et: number|null, precip: number|null }>|null} tempestActuals
+ * @param {{ histDays?: number, futureDays?: number }} opts
  */
-function dailyWaterDetail(daily, { histDays = 5, futureDays = 5 } = {}) {
+function dailyWaterDetail(daily, tempestActuals, { histDays = 5, futureDays = 5 } = {}) {
+  // Support legacy two-arg call: dailyWaterDetail(daily, opts)
+  if (tempestActuals && !Array.isArray(tempestActuals)) {
+    const opts = tempestActuals;
+    tempestActuals = null;
+    histDays = opts.histDays ?? histDays;
+    futureDays = opts.futureDays ?? futureDays;
+  }
+
   const times = daily?.time || [];
   const et = daily?.et0_fao_evapotranspiration || [];
   const precip = daily?.precipitation_sum || [];
   const precipProb = daily?.precipitation_probability_max || [];
 
+  // Build a lookup map for Tempest actuals by date string.
+  const tempestByDate = new Map();
+  if (Array.isArray(tempestActuals)) {
+    for (const obs of tempestActuals) {
+      if (obs?.date) tempestByDate.set(obs.date, obs);
+    }
+  }
+
   const today = new Date().toISOString().slice(0, 10);
   const todayIdx = times.findIndex((t) => t?.slice(0, 10) === today);
-  if (todayIdx < 0) return { historical: [], projected: [], cumulative: 0 };
+  if (todayIdx < 0) return { historical: [], projected: [], cumulative: 0, hasTempest: false };
 
   const historical = [];
   const histStart = Math.max(0, todayIdx - histDays);
   for (let i = histStart; i < todayIdx; i++) {
-    const etv = et[i] ?? 0;
-    const pv = precip[i] ?? 0;
-    historical.push({ date: times[i], et: round(etv), precip: round(pv), deficit: round(etv - pv) });
+    const dateStr = times[i]?.slice(0, 10);
+    const tObs = tempestByDate.get(dateStr);
+    const etv = (tObs?.et != null ? tObs.et : et[i]) ?? 0;
+    const pv = (tObs?.precip != null ? tObs.precip : precip[i]) ?? 0;
+    historical.push({
+      date: times[i],
+      et: round(etv),
+      precip: round(pv),
+      deficit: round(etv - pv),
+      fromTempest: !!(tObs?.et != null || tObs?.precip != null),
+    });
   }
 
   const projected = [];
@@ -103,7 +135,8 @@ function dailyWaterDetail(daily, { histDays = 5, futureDays = 5 } = {}) {
 
   const all = [...historical, ...projected];
   const cumulative = round(all.reduce((s, d) => s + d.deficit, 0));
-  return { historical, projected, cumulative };
+  const hasTempest = tempestByDate.size > 0;
+  return { historical, projected, cumulative, hasTempest };
 }
 
 function waterBalance(daily, { window = 7 } = {}) {
