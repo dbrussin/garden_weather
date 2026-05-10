@@ -49,7 +49,7 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
 
   const latKey = lat != null ? (+lat).toFixed(2) : "x";
   const cacheKey = `${stationId},${today},${latKey}`;
-  const hit = getCached("tempest_v6", cacheKey, TTL_MS);
+  const hit = getCached("tempest_v7", cacheKey, TTL_MS);
   if (hit) return hit;
 
   try {
@@ -67,9 +67,30 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
       d.setDate(d.getDate() - offset);
       const dateStr = localDateStr(d);
 
-      if (!data?.obs?.length) return { date: dateStr, precip: null, et: null };
+      if (!data?.obs?.length) {
+        console.log(`[Tempest] day_offset=${offset}: no obs`);
+        return { date: dateStr, precip: null, et: null };
+      }
 
       const firstRow = data.obs[0];
+
+      // Log precip fields and timestamp so we can identify the correct field name.
+      if (Array.isArray(firstRow)) {
+        console.log(`[Tempest] day_offset=${offset} (positional): row=`, firstRow);
+      } else {
+        const ts = firstRow.timestamp ? new Date(firstRow.timestamp * 1000).toISOString() : "?";
+        console.log(`[Tempest] day_offset=${offset} timestamp=${ts}`, {
+          precip_accum_local_day:               firstRow.precip_accum_local_day,
+          precip_accum_local_day_final:         firstRow.precip_accum_local_day_final,
+          precip_accum_local_yesterday:         firstRow.precip_accum_local_yesterday,
+          precip_accum_local_yesterday_final:   firstRow.precip_accum_local_yesterday_final,
+          air_temperature:                      firstRow.air_temperature,
+          air_temperature_high:                 firstRow.air_temperature_high,
+          air_temperature_low:                  firstRow.air_temperature_low,
+          solar_radiation:                      firstRow.solar_radiation,
+          solar_radiation_high:                 firstRow.solar_radiation_high,
+        });
+      }
 
       // Positional array format (daily summary — some account types)
       if (Array.isArray(firstRow)) {
@@ -83,7 +104,7 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
     // Reverse so oldest is first.
     results.reverse();
 
-    setCached("tempest_v6", cacheKey, results);
+    setCached("tempest_v7", cacheKey, results);
     return results;
   } catch (err) {
     console.error("[Tempest] fetch error:", err);
