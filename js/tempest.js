@@ -1,29 +1,19 @@
-// WeatherFlow Tempest REST API — fetch daily ET + precipitation actuals.
-// Docs: https://apidocs.tempestwx.com/
+// WeatherFlow Tempest REST API — fetch daily precipitation actuals.
 //
-// Strategy: query each past day with explicit time_start / time_end parameters
-// (epoch seconds). This is more reliable than day_offset, which may be ignored
-// or may return the current observation rather than historical data.
+// Single request covering the past N days; the API returns daily summary
+// observations (one row per day) when querying a multi-day time range.
+// Column layout confirmed by user testing:
+//   col  0 : timestamp (epoch seconds, start of day)
+//   col 13 : precip_accum_local_day_final — Rain Check corrected daily total (mm)
 //
-// Within each day's response, local_daily_rain_accum accumulates monotonically
-// from local midnight until the next midnight, then resets. Taking the MAXIMUM
-// value across all observations for the window gives the day's total regardless
-// of whether the API returns data in ascending or descending order.
-//
-// All 5 daily fetches run in parallel; each result is cached independently so
-// older days (TTL 7 d) don't re-fetch on every page load.
+// ET is not available in this summary format; it falls back to Open-Meteo.
 
 (function () {
 
 const BASE = "https://swd.weatherflow.com/swd/rest";
-const RECENT_TTL = 60 * 60 * 1000;        // yesterday may still update (QC)
-const OLD_TTL = 7 * 24 * 60 * 60 * 1000;  // older days are final
+const TTL_MS = 60 * 60 * 1000; // 1 hour — refresh each hour, QC values may update
 
-/**
- * Return a YYYY-MM-DD string for a Date in the browser's local timezone.
- * We use local time because Tempest's `local_daily_rain_accum` resets at the
- * station's local midnight, which should match the user's browser timezone.
- */
+/** YYYY-MM-DD in the browser's local timezone. */
 function localDateStr(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -32,123 +22,93 @@ function localDateStr(date) {
 }
 
 /**
- * Fetch daily ET + precipitation for the past `days` complete days.
- * Returns oldest-first (index 0 = furthest back, last = yesterday).
+ * Fetch daily precipitation actuals for the past `days` complete days.
+ * Returns an array oldest-first: [{date, precip, et}, …].
+ * `precip` is mm from the Tempest Rain Check algorithm; `et` is always null
+ * (not in the daily summary format — Open-Meteo ET is used as the fallback).
  *
  * @param {{ stationId: string|number, token: string, days?: number }} opts
- * @returns {Promise<Array<{ date: string, et: number|null, precip: number|null }>>}
  */
 async function fetchTempestDailyStats({ stationId, token, days = 5 }) {
   const now = new Date();
+  const today = localDateStr(now);
 
-  // Build one fetch task per past day (oldest → newest, offsets days…1).
-  const tasks = [];
-  for (let offset = days; offset >= 1; offset--) {
-    const dayDate = new Date(now);
-    dayDate.setDate(dayDate.getDate() - offset);
+  // Cache the whole block keyed by station + today's date.
+  const cacheKey = `${stationId},${today}`;
+  const hit = getCached("tempest_v4", cacheKey, TTL_MS);
+  if (hit) return hit;
 
-    const dateStr = localDateStr(dayDate);
-    const cacheKey = `v3,${stationId},${dateStr}`;
-    const ttl = offset <= 1 ? RECENT_TTL : OLD_TTL;
+  // time_start: local midnight N days ago  (matches Python: now - 5*24*60*60)
+  // time_end:   now  (API will include today's partial row; we skip it in parsing)
+  const start = new Date(now);
+  start.setDate(start.getDate() - days);
+  start.setHours(0, 0, 0, 0);
 
-    tasks.push({ offset, dateStr, cacheKey, ttl, dayDate });
+  const timeStart = Math.floor(start.getTime() / 1000);
+  const timeEnd   = Math.floor(now.getTime() / 1000);
+
+  try {
+    const url =
+      `${BASE}/observations/station/${encodeURIComponent(stationId)}` +
+      `?token=${encodeURIComponent(token)}&time_start=${timeStart}&time_end=${timeEnd}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Tempest HTTP ${res.status}`);
+    const data = await res.json();
+    const results = parseDailyObs(data.obs, days, now, today);
+    setCached("tempest_v4", cacheKey, results);
+    return results;
+  } catch {
+    return emptyDays(days, now);
   }
-
-  // Run all fetches concurrently; serve from cache when available.
-  const settled = await Promise.all(tasks.map(async ({ dateStr, cacheKey, ttl, dayDate }) => {
-    const hit = getCached("tempest_v3", cacheKey, ttl);
-    if (hit) return { date: dateStr, ...hit };
-
-    // Build the day window in local time so it aligns with Tempest's midnight.
-    const start = new Date(dayDate);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(dayDate);
-    end.setHours(23, 59, 59, 0);
-
-    const timeStart = Math.floor(start.getTime() / 1000);
-    const timeEnd = Math.floor(end.getTime() / 1000);
-
-    try {
-      const url = `${BASE}/observations/station/${encodeURIComponent(stationId)}` +
-        `?token=${encodeURIComponent(token)}&time_start=${timeStart}&time_end=${timeEnd}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Tempest HTTP ${res.status}`);
-      const data = await res.json();
-      const entry = extractDayTotal(data.obs);
-      setCached("tempest_v3", cacheKey, entry);
-      return { date: dateStr, ...entry };
-    } catch {
-      return { date: dateStr, precip: null, et: null };
-    }
-  }));
-
-  return settled; // already oldest-first because tasks were built that way
 }
 
 /**
- * Extract the daily precipitation total and ET from an observations array.
+ * Parse the obs array returned by a multi-day Tempest query.
  *
- * WeatherFlow returns obs in two formats:
+ * Each row is a positional array. We group by local date and take the maximum
+ * col-13 value seen per day — in case there is more than one row per day,
+ * the maximum equals the end-of-day Rain Check total.
  *
- *   Array format (Tempest obs_st, most common):
- *     col  0 = timestamp (epoch seconds)
- *     col 12 = precip, mm per observation interval  ← per-minute, NOT daily total
- *     col 18 = local_daily_rain_accum, mm           ← running total from midnight
- *     col 19 = rain_accum_final (per-interval NC)   ← also NOT daily total
- *     col 20 = local_daily_rain_accum_final, mm     ← QC'd running total (best)
- *
- *   Object format (newer API):
- *     named fields: local_daily_rain_accum_final, local_daily_rain_accum,
- *                   precip_accum_local_day_final, precip_accum_local_day, precip
- *
- * Strategy: take the MAXIMUM accumulated value seen across all obs.
- * Because local_daily_rain_accum only increases during a day and resets at
- * midnight, max(obs) = the day's total, regardless of sort order.
- *
- * Fallback: sum all per-interval precip values — correct but less precise if
- * the station reports in multi-minute intervals.
+ * Today's row (partial day) is skipped.
  */
-function extractDayTotal(obs) {
-  if (!Array.isArray(obs) || !obs.length) return { precip: null, et: null };
+function parseDailyObs(obs, days, now, today) {
+  if (!Array.isArray(obs) || !obs.length) return emptyDays(days, now);
 
-  const sample = obs[0];
-  let maxAccum = null;   // best running-total field
-  let sumInterval = 0;   // sum of per-interval amounts (fallback)
-  let et = null;
+  const byDate = new Map();
 
-  if (Array.isArray(sample)) {
-    // ---- positional array format ----
-    for (const row of obs) {
-      if (!Array.isArray(row)) continue;
-      // Prefer col 20 (QC'd daily accum) over col 18 (raw daily accum).
-      // Never use col 19 — it is the per-interval NC value, not the daily total.
-      const accum = row[20] ?? row[18] ?? null;
-      if (accum != null && (maxAccum === null || accum > maxAccum)) maxAccum = accum;
-      // Sum col 12 as fallback (per-interval precip in mm).
-      if (typeof row[12] === "number") sumInterval += row[12];
-    }
-  } else {
-    // ---- object format ----
-    for (const o of obs) {
-      if (!o) continue;
-      const accum =
-        o.local_daily_rain_accum_final ??
-        o.precip_accum_local_day_final ??
-        o.local_daily_rain_accum ??
-        o.precip_accum_local_day ??
-        null;
-      if (accum != null && (maxAccum === null || accum > maxAccum)) maxAccum = accum;
-      if (typeof o.precip === "number") sumInterval += o.precip;
-      // ET (reference evapotranspiration) appears in some station responses.
-      if (o.et != null) et = o.et;
+  for (const row of obs) {
+    if (!Array.isArray(row) || row[0] == null) continue;
+
+    const dateStr = localDateStr(new Date(row[0] * 1000));
+    if (dateStr === today) continue; // skip incomplete current day
+
+    // col 13 = precip_accum_local_day_final (Rain Check corrected daily total)
+    const precip = typeof row[13] === "number" ? row[13] : null;
+
+    // Keep maximum — handles multiple rows per day, or accumulated-running fields.
+    const prev = byDate.get(dateStr);
+    if (!prev || (precip != null && (prev.precip == null || precip > prev.precip))) {
+      byDate.set(dateStr, { date: dateStr, precip, et: null });
     }
   }
 
-  const precip = maxAccum !== null ? maxAccum : (sumInterval > 0 ? sumInterval : 0);
-  return {
-    precip: Math.round(precip * 10) / 10,
-    et: et !== null ? Math.round(et * 10) / 10 : null,
-  };
+  // Build result oldest-first, filling missing dates with nulls.
+  const result = [];
+  for (let offset = days; offset >= 1; offset--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - offset);
+    const dateStr = localDateStr(d);
+    result.push(byDate.get(dateStr) ?? { date: dateStr, precip: null, et: null });
+  }
+  return result;
+}
+
+function emptyDays(days, now) {
+  return Array.from({ length: days }, (_, i) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - (days - i));
+    return { date: localDateStr(d), precip: null, et: null };
+  });
 }
 
 window.fetchTempestDailyStats = fetchTempestDailyStats;
