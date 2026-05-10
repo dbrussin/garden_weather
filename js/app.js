@@ -114,7 +114,7 @@ async function activate({ lat, lon, name }) {
     // Tempest actuals fetch — non-blocking, updates water panel when ready.
     const tempestCfg = getTempestConfig(lat, lon);
     if (tempestCfg) {
-      fetchTempestDailyStats({ stationId: tempestCfg.stationId, token: tempestCfg.token })
+      fetchTempestDailyStats({ stationId: tempestCfg.stationId, token: tempestCfg.token, lat })
         .then((tempest) => {
           if (cache.key !== key) return;
           cache.tempest = tempest;
@@ -179,7 +179,7 @@ function onTempestSave() {
 
   // Fetch immediately if a location is active.
   if (cache.forecast && cache.key) {
-    fetchTempestDailyStats({ stationId, token })
+    fetchTempestDailyStats({ stationId, token, lat: active.lat })
       .then((tempest) => {
         cache.tempest = tempest;
         renderDashboard(cache.forecast, cache.historical, tempest);

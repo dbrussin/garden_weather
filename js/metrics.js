@@ -338,6 +338,60 @@ function plantingGuide(soil, frost) {
   });
 }
 
+/**
+ * FAO-56 Penman-Monteith reference ET₀ (mm/day) from Tempest daily summary columns.
+ *
+ * Solar radiation column gives the daily PEAK (W/m²), not the average. We
+ * convert it to a daily total using a sinusoidal daylight model and the
+ * computed astronomical day length for the given latitude and day-of-year.
+ *
+ * Returns null if any required input is absent or non-finite.
+ */
+function calcEt0PM({ tmax, tmin, rhHigh, rhLow, windAvgMs, solarPeakWm2,
+                     pressureHighMb, pressureLowMb, lat, doy }) {
+  if ([tmax, tmin, rhHigh, rhLow, windAvgMs, solarPeakWm2,
+       pressureHighMb, pressureLowMb, lat, doy]
+      .some((v) => v == null || !Number.isFinite(v))) return null;
+
+  const T = (tmax + tmin) / 2;
+  const rhMean = (rhHigh + rhLow) / 2;
+  const P = (pressureHighMb + pressureLowMb) / 2 / 10; // mb → kPa
+
+  const eSat = (t) => 0.6108 * Math.exp(17.27 * t / (t + 237.3));
+  const es = (eSat(tmax) + eSat(tmin)) / 2;
+  const ea = (rhMean / 100) * es;
+  const delta = 4098 * eSat(T) / Math.pow(T + 237.3, 2);
+  const gamma = 0.000665 * P;
+
+  // Extraterrestrial radiation Ra (MJ/m²/day) and daylight hours N
+  const phi = lat * Math.PI / 180;
+  const dr = 1 + 0.033 * Math.cos(2 * Math.PI / 365 * doy);
+  const sdec = 0.409 * Math.sin(2 * Math.PI / 365 * doy - 1.39);
+  const omegas = Math.acos(Math.max(-1, Math.min(1, -Math.tan(phi) * Math.tan(sdec))));
+  const Ra = (24 * 60 / Math.PI) * 0.0820 * dr *
+    (omegas * Math.sin(phi) * Math.sin(sdec) + Math.cos(phi) * Math.cos(sdec) * Math.sin(omegas));
+  const N = (24 / Math.PI) * omegas; // daylight hours
+
+  // Rs from peak: sinusoidal integral over daylight period → MJ/m²/day
+  const Rs = solarPeakWm2 * (2 / Math.PI) * N * 3600 / 1e6;
+
+  // Net radiation
+  const Rso = 0.75 * Ra;
+  const Rns = 0.77 * Rs;
+  const sigma = 4.903e-9; // MJ/m²/day/K⁴
+  const Rnl = sigma *
+    ((Math.pow(tmax + 273.16, 4) + Math.pow(tmin + 273.16, 4)) / 2) *
+    (0.34 - 0.14 * Math.sqrt(Math.max(0, ea))) *
+    Math.max(0, 1.35 * Rs / Math.max(Rso, 0.01) - 0.35);
+  const Rn = Rns - Rnl;
+
+  const u2 = windAvgMs;
+  const et0 = (0.408 * delta * Rn + gamma * (900 / (T + 273)) * u2 * (es - ea)) /
+              (delta + gamma * (1 + 0.34 * u2));
+
+  return Math.max(0, Math.round(et0 * 10) / 10);
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 
@@ -371,6 +425,7 @@ function round(n) {
   return Math.round(n * 10) / 10;
 }
 
+window.calcEt0PM = calcEt0PM;
 window.frostRisk = frostRisk;
 window.growingDegreeDays = growingDegreeDays;
 window.soilSnapshot = soilSnapshot;
