@@ -72,7 +72,8 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
     const results = parseDailyObs(data.obs, days, now, today, lat);
     setCached("tempest_v4", cacheKey, results);
     return results;
-  } catch {
+  } catch (err) {
+    console.error("[Tempest] fetch/parse error:", err);
     return emptyDays(days, now);
   }
 }
