@@ -49,7 +49,7 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
   // Cache the whole block keyed by station + today's date + lat bucket.
   const latKey = lat != null ? (+lat).toFixed(2) : "x";
   const cacheKey = `${stationId},${today},${latKey}`;
-  const hit = getCached("tempest_v4", cacheKey, TTL_MS);
+  const hit = getCached("tempest_v5", cacheKey, TTL_MS);
   if (hit) return hit;
 
   // time_start: local midnight N days ago  (matches Python: now - N*24*60*60)
@@ -70,7 +70,7 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
     const data = await res.json();
     console.log("[Tempest] raw response keys:", Object.keys(data), "obs field:", data.obs, "obs_st field:", data.obs_st);
     const results = parseDailyObs(data.obs, days, now, today, lat);
-    setCached("tempest_v4", cacheKey, results);
+    setCached("tempest_v5", cacheKey, results);
     return results;
   } catch (err) {
     console.error("[Tempest] fetch/parse error:", err);
