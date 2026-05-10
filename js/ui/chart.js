@@ -189,8 +189,10 @@ function waterBalanceChart({ days, unit = "mm", histCount = 5 }) {
 
   const allPrecip = days.map((d) => d.precip ?? 0);
   const allET = days.map((d) => d.et ?? 0);
-  const allNet = days.map((d) => Math.abs((d.precip ?? 0) - (d.et ?? 0)));
-  const maxVal = Math.max(1, ...allPrecip, ...allET, ...allNet);
+  // Cumulative net: running sum of (precip − ET) across all days.
+  let cumSum = 0;
+  const cumNet = days.map((d) => { cumSum += (d.precip ?? 0) - (d.et ?? 0); return cumSum; });
+  const maxVal = Math.max(1, ...allPrecip, ...allET, ...cumNet.map(Math.abs));
   const halfH = innerH / 2 * 0.88;
 
   // y coordinate for a value above zero (precip / net surplus)
@@ -250,20 +252,18 @@ function waterBalanceChart({ days, unit = "mm", histCount = 5 }) {
     return `${precipBar}${etBar}${xLabel}${deficitLabel}`;
   }).join("");
 
-  // ---- net line (precip − ET) ----
-  const netLinePoints = days.map((d, i) => {
+  // ---- cumulative net line ----
+  const netLinePoints = cumNet.map((v, i) => {
     const cx = PAD2.left + step * i + step / 2;
-    const net = (d.precip ?? 0) - (d.et ?? 0);
-    return `${cx.toFixed(1)},${toNetY(net).toFixed(1)}`;
+    return `${cx.toFixed(1)},${toNetY(v).toFixed(1)}`;
   }).join(" ");
 
   const netLine = `<polyline points="${netLinePoints}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-opacity="0.55" stroke-linejoin="round" stroke-linecap="round"/>`;
 
-  const netDots = days.map((d, i) => {
+  const netDots = cumNet.map((v, i) => {
     const cx = PAD2.left + step * i + step / 2;
-    const net = (d.precip ?? 0) - (d.et ?? 0);
-    const cy = toNetY(net);
-    const dotColor = net >= 0.05 ? "#3e7ca1" : net <= -0.05 ? "#c26a1f" : "var(--ink-soft)";
+    const cy = toNetY(v);
+    const dotColor = v >= 0.05 ? "#3e7ca1" : v <= -0.05 ? "#c26a1f" : "var(--ink-soft)";
     return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.5" fill="var(--surface)" stroke="${dotColor}" stroke-width="2"/>`;
   }).join("");
 
@@ -282,7 +282,7 @@ function waterBalanceChart({ days, unit = "mm", histCount = 5 }) {
     <rect x="${PAD2.left + 68}" y="${PAD2.top - 14}" width="8" height="8" fill="#c26a1f"/>
     <text x="${PAD2.left + 79}" y="${PAD2.top - 7}" class="chart-label">ET ↓</text>
     <circle cx="${PAD2.left + 126}" cy="${PAD2.top - 10}" r="3.5" fill="var(--surface)" stroke="var(--ink-soft)" stroke-width="2"/>
-    <text x="${PAD2.left + 133}" y="${PAD2.top - 7}" class="chart-label">Net</text>
+    <text x="${PAD2.left + 133}" y="${PAD2.top - 7}" class="chart-label">Cumul. net</text>
     ${unit ? `<text x="${W2 - PAD2.right}" y="${PAD2.top - 7}" class="chart-label" text-anchor="end" fill="var(--ink-soft)">${escapeSvg(unit)}</text>` : ""}
   `;
 

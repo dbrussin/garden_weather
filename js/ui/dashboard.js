@@ -141,6 +141,26 @@ function renderWater(waterDetail, rain) {
     ? `<span class="water-source-badge">Actuals: Tempest</span>`
     : `<span class="water-source-badge water-source-meteo">Actuals: Open-Meteo</span>`;
 
+  // Compute running cumulative net (precip − ET) across all rows for table column.
+  let runningCum = 0;
+  const allRows = [
+    ...(waterDetail.historical || []).map((d) => ({ ...d, isHist: true })),
+    ...(waterDetail.projected  || []).map((d) => ({ ...d, isHist: false })),
+  ];
+  const cumByDate = new Map();
+  for (const d of allRows) {
+    runningCum += toDisplay(d.precip ?? 0) - toDisplay(d.et ?? 0);
+    cumByDate.set(d.date, runningCum);
+  }
+
+  function cumCell(date) {
+    const v = cumByDate.get(date);
+    if (v == null) return `<td class="num">–</td>`;
+    const cls = v > 0.05 ? "num water-surplus" : v < -0.05 ? "num water-deficit" : "num";
+    const sign = v > 0 ? "+" : "";
+    return `<td class="${cls}">${sign}${fmtNum(v, dp)}</td>`;
+  }
+
   // Summary table rows
   const histRows = (waterDetail.historical || []).map((d) => `
     <tr class="water-hist">
@@ -148,6 +168,7 @@ function renderWater(waterDetail, rain) {
       ${etCell(d.et)}
       ${precipCell(d.precip)}
       ${netCell(d.deficit)}
+      ${cumCell(d.date)}
     </tr>`).join("");
 
   const projRows = (waterDetail.projected || []).map((d, i) => {
@@ -159,10 +180,11 @@ function renderWater(waterDetail, rain) {
       ${etCell(d.et)}
       <td class="num">${fmtNum(toDisplay(d.precip), dp)}${probStr}</td>
       ${netCell(d.deficit)}
+      ${cumCell(d.date)}
     </tr>`;
   }).join("");
 
-  // Cumulative: in the data model cumulative = sum of (ET − precip), so net = −cumulative.
+  // Cumulative total: in the data model cumulative = sum of (ET − precip), so net = −cumulative.
   const cumNet = toDisplay(-(waterDetail.cumulative ?? 0));
   const cumSign = cumNet > 0.05 ? "+" : "";
   const cumCls = cumNet > 0.05 ? "water-surplus" : cumNet < -0.05 ? "water-deficit" : "";
@@ -180,16 +202,17 @@ function renderWater(waterDetail, rain) {
           <th class="num">ET (${unit}) ↓</th>
           <th class="num">Rain ↑</th>
           <th class="num">Net</th>
+          <th class="num">Cumul.</th>
         </tr>
       </thead>
       <tbody>
         ${histRows}
-        <tr class="water-divider"><td colspan="4"></td></tr>
+        <tr class="water-divider"><td colspan="5"></td></tr>
         ${projRows}
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="3" class="water-cum-label">10-day net (rain − ET)</td>
+          <td colspan="4" class="water-cum-label">10-day net (rain − ET)</td>
           <td class="num ${cumCls}">${cumSign}${fmtNum(cumNet, dp)} ${unit}</td>
         </tr>
       </tfoot>

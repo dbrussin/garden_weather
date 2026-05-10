@@ -90,9 +90,6 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
     const data = await res.json();
 
     const obs = data.obs;
-    console.log("[Tempest] device obs: count =", obs?.length,
-      "| first row =", obs?.[0]);
-
     const results = aggregateDaily(obs, days, now, today, lat);
     setCached("tempest_v12", cacheKey, results);
     return results;

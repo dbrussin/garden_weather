@@ -119,13 +119,8 @@ async function activate({ lat, lon, name }) {
           if (cache.key !== key) return;
           cache.tempest = tempest;
           renderDashboard(forecast, cache.historical, tempest);
-          // Warn in console when Tempest returned no usable data.
-          const anyReal = tempest.some((d) => d.precip != null || d.et != null);
-          if (!anyReal) console.warn("[Tempest] fetch returned no usable data — all values null. Check station ID, token, and API response.", tempest);
         })
-        .catch((err) => {
-          console.warn("[Tempest] fetch failed:", err);
-        });
+        .catch(() => { /* non-fatal — Open-Meteo data used as fallback */ });
     }
 
     // Historical data for hardiness zone loads after — it's slower and the
