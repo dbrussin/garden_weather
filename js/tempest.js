@@ -49,7 +49,7 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
 
   const latKey = lat != null ? (+lat).toFixed(2) : "x";
   const cacheKey = `${stationId},${today},${latKey}`;
-  const hit = getCached("tempest_v9", cacheKey, TTL_MS);
+  const hit = getCached("tempest_v10", cacheKey, TTL_MS);
   if (hit) return hit;
 
   // Use local midnight as time_end so the range is entirely in the past,
@@ -91,7 +91,7 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
       results = parseNamedSnapshot(firstRow, days, now);
     }
 
-    setCached("tempest_v9", cacheKey, results);
+    setCached("tempest_v10", cacheKey, results);
     return results;
   } catch (err) {
     console.error("[Tempest] fetch error:", err);
