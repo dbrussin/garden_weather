@@ -49,7 +49,7 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
 
   const latKey = lat != null ? (+lat).toFixed(2) : "x";
   const cacheKey = `${stationId},${today},${latKey}`;
-  const hit = getCached("tempest_v10", cacheKey, TTL_MS);
+  const hit = getCached("tempest_v11", cacheKey, TTL_MS);
   if (hit) return hit;
 
   // Use local midnight as time_end so the range is entirely in the past,
@@ -74,7 +74,23 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
 
     console.log("[Tempest] response: obs count =", obs?.length,
       "| first row type =", isPositional ? `array[${rowLen}]` : typeof firstRow,
-      "| first row =", firstRow);
+      "| outdoor_keys =", data.outdoor_keys,
+      "| station_id =", data.station_id);
+
+    // Try to resolve device_id from /stations/ metadata endpoint.
+    let deviceId = null;
+    try {
+      const stMeta = await fetch(
+        `${BASE}/stations/${encodeURIComponent(stationId)}?token=${encodeURIComponent(token)}`
+      ).then((r) => r.json());
+      console.log("[Tempest] /stations/ response:", JSON.stringify(stMeta).slice(0, 500));
+      const st = Array.isArray(stMeta.stations) ? stMeta.stations[0] : null;
+      const dev = st?.devices?.find((d) => d.device_type === "ST");
+      if (dev?.device_id) deviceId = dev.device_id;
+    } catch (e) {
+      console.warn("[Tempest] /stations/ lookup failed:", e.message);
+    }
+    console.log("[Tempest] resolved deviceId:", deviceId);
 
     let results;
     if (isPositional && rowLen >= 30) {
@@ -91,7 +107,7 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
       results = parseNamedSnapshot(firstRow, days, now);
     }
 
-    setCached("tempest_v10", cacheKey, results);
+    setCached("tempest_v11", cacheKey, results);
     return results;
   } catch (err) {
     console.error("[Tempest] fetch error:", err);
