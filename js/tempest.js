@@ -89,6 +89,9 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
 function parseDailyObs(obs, days, now, today, lat) {
   if (!Array.isArray(obs) || !obs.length) return emptyDays(days, now);
 
+  // Log the first row so column layout can be verified in the browser console.
+  console.log("[Tempest] obs row count:", obs.length, "first row:", obs[0]);
+
   const byDate = new Map();
 
   for (const row of obs) {

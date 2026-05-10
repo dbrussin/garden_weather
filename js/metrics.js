@@ -135,7 +135,10 @@ function dailyWaterDetail(daily, tempestActuals, { histDays = 5, futureDays = 5 
 
   const all = [...historical, ...projected];
   const cumulative = round(all.reduce((s, d) => s + d.deficit, 0));
-  const hasTempest = tempestByDate.size > 0;
+  // Only flag hasTempest when at least one day has a real (non-null) Tempest value.
+  const hasTempest = Array.from(tempestByDate.values()).some(
+    (obs) => obs.precip != null || obs.et != null
+  );
   return { historical, projected, cumulative, hasTempest };
 }
 
