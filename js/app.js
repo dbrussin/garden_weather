@@ -47,7 +47,6 @@ els.tempestSave.addEventListener("click", onTempestSave);
 els.tempestClear.addEventListener("click", onTempestClear);
 
 syncUnitButtons();
-loadTempestConfigUI();
 
 async function onUseMyLocation() {
   setStatus("Locating…");
@@ -110,9 +109,10 @@ async function activate({ lat, lon, name }) {
     cache = { forecast, historical: null, tempest: null, key };
     renderDashboard(forecast, null, null);
     setStatus("");
+    loadTempestConfigUI(); // populate form with this location's saved config
 
     // Tempest actuals fetch — non-blocking, updates water panel when ready.
-    const tempestCfg = getTempestConfig();
+    const tempestCfg = getTempestConfig(lat, lon);
     if (tempestCfg) {
       fetchTempestDailyStats({ stationId: tempestCfg.stationId, token: tempestCfg.token })
         .then((tempest) => {
@@ -146,13 +146,13 @@ function switchUnits(units) {
 // Tempest config UI
 
 function loadTempestConfigUI() {
-  const cfg = getTempestConfig();
-  if (!cfg) return;
-  els.tempestStationId.value = cfg.stationId;
-  els.tempestToken.value = cfg.token;
-  // Open the details element so the user can see the saved config.
+  if (!active) return;
+  const cfg = getTempestConfig(active.lat, active.lon);
+  els.tempestStationId.value = cfg ? cfg.stationId : "";
+  els.tempestToken.value = cfg ? cfg.token : "";
+  // Open the details element if a config is already stored for this location.
   const details = document.getElementById("tempest-config");
-  if (details) details.open = true;
+  if (details && cfg) details.open = true;
 }
 
 function onTempestSave() {
@@ -160,18 +160,24 @@ function onTempestSave() {
   const token = els.tempestToken.value.trim();
   els.tempestStatus.hidden = true;
 
+  if (!active) {
+    els.tempestStatus.textContent = "Select a location first.";
+    els.tempestStatus.hidden = false;
+    return;
+  }
+
   if (!stationId || !token) {
     els.tempestStatus.textContent = "Enter both a station ID and an API token.";
     els.tempestStatus.hidden = false;
     return;
   }
 
-  setTempestConfig({ stationId, token });
-  els.tempestStatus.textContent = "Saved. Reload data to apply.";
+  setTempestConfig({ lat: active.lat, lon: active.lon, stationId, token });
+  els.tempestStatus.textContent = "Saved for this location. Fetching data…";
   els.tempestStatus.style.color = "var(--accent)";
   els.tempestStatus.hidden = false;
 
-  // If a location is active, re-fetch Tempest data immediately.
+  // Fetch immediately if a location is active.
   if (cache.forecast && cache.key) {
     fetchTempestDailyStats({ stationId, token })
       .then((tempest) => {
@@ -187,10 +193,11 @@ function onTempestSave() {
 }
 
 function onTempestClear() {
-  clearTempestConfig();
+  if (!active) return;
+  clearTempestConfig(active.lat, active.lon);
   els.tempestStationId.value = "";
   els.tempestToken.value = "";
-  els.tempestStatus.textContent = "Tempest config cleared.";
+  els.tempestStatus.textContent = "Tempest config cleared for this location.";
   els.tempestStatus.style.color = "var(--ink-soft)";
   els.tempestStatus.hidden = false;
   if (cache.forecast) {

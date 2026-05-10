@@ -90,15 +90,28 @@ function renderWater(waterDetail, rain) {
     return imperial ? mmToIn(mm) : mm;
   }
 
-  function fmtWaterVal(mm) {
-    return fmtNum(toDisplay(mm), imperial ? 2 : 1);
+  const dp = imperial ? 2 : 1;
+
+  // ET is shown as a negative value (water leaving the soil).
+  function etCell(mm) {
+    const v = toDisplay(mm);
+    if (v == null || Number.isNaN(v)) return `<td class="num">–</td>`;
+    return `<td class="num water-deficit">−${fmtNum(v, dp)}</td>`;
   }
 
-  function deficitCell(deficit) {
-    const v = toDisplay(deficit);
-    const cls = v > 0.05 ? "num water-deficit" : v < -0.05 ? "num water-surplus" : "num";
-    const sign = v > 0.05 ? "+" : "";
-    return `<td class="${cls}">${sign}${fmtNum(v, imperial ? 2 : 1)}</td>`;
+  function precipCell(mm) {
+    const v = toDisplay(mm);
+    if (v == null || Number.isNaN(v)) return `<td class="num">–</td>`;
+    return `<td class="num">${fmtNum(v, dp)}</td>`;
+  }
+
+  // Net = precip − ET: positive means surplus (more rain than ET).
+  // deficit in the data model = ET − precip, so net = −deficit.
+  function netCell(deficit) {
+    const net = toDisplay(-deficit); // flip sign
+    const cls = net > 0.05 ? "num water-surplus" : net < -0.05 ? "num water-deficit" : "num";
+    const sign = net > 0 ? "+" : "";
+    return `<td class="${cls}">${sign}${fmtNum(net, dp)}</td>`;
   }
 
   // Build the chart data array: historical (actuals) then projected (forecast).
@@ -132,9 +145,9 @@ function renderWater(waterDetail, rain) {
   const histRows = (waterDetail.historical || []).map((d) => `
     <tr class="water-hist">
       <td>${fmtDay(d.date)}${d.fromTempest ? " <span class='water-tempest-dot' title='Tempest actual'>●</span>" : ""}</td>
-      <td class="num">${fmtWaterVal(d.et)}</td>
-      <td class="num">${fmtWaterVal(d.precip)}</td>
-      ${deficitCell(d.deficit)}
+      ${etCell(d.et)}
+      ${precipCell(d.precip)}
+      ${netCell(d.deficit)}
     </tr>`).join("");
 
   const projRows = (waterDetail.projected || []).map((d, i) => {
@@ -143,15 +156,16 @@ function renderWater(waterDetail, rain) {
     return `
     <tr class="${isToday ? "water-today" : "water-proj"}">
       <td>${fmtDay(d.date)}${isToday ? " <span class='water-today-label'>today</span>" : ""}</td>
-      <td class="num">${fmtWaterVal(d.et)}</td>
-      <td class="num">${fmtWaterVal(d.precip)}${probStr}</td>
-      ${deficitCell(d.deficit)}
+      ${etCell(d.et)}
+      <td class="num">${fmtNum(toDisplay(d.precip), dp)}${probStr}</td>
+      ${netCell(d.deficit)}
     </tr>`;
   }).join("");
 
-  const cum = toDisplay(waterDetail.cumulative ?? 0);
-  const cumSign = cum > 0.05 ? "+" : "";
-  const cumCls = cum > 0.05 ? "water-deficit" : cum < -0.05 ? "water-surplus" : "";
+  // Cumulative: in the data model cumulative = sum of (ET − precip), so net = −cumulative.
+  const cumNet = toDisplay(-(waterDetail.cumulative ?? 0));
+  const cumSign = cumNet > 0.05 ? "+" : "";
+  const cumCls = cumNet > 0.05 ? "water-surplus" : cumNet < -0.05 ? "water-deficit" : "";
   const rainNote = rain
     ? `Next rain: ${fmtDay(rain.date)} (~${fmtPrecip(rain.amount)})`
     : "No rain in 7-day forecast.";
@@ -163,9 +177,9 @@ function renderWater(waterDetail, rain) {
       <thead>
         <tr>
           <th>Day</th>
-          <th class="num">ET (${unit})</th>
-          <th class="num">Rain</th>
-          <th class="num">±</th>
+          <th class="num">ET (${unit}) ↓</th>
+          <th class="num">Rain ↑</th>
+          <th class="num">Net</th>
         </tr>
       </thead>
       <tbody>
@@ -175,8 +189,8 @@ function renderWater(waterDetail, rain) {
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="3" class="water-cum-label">10-day cumulative deficit</td>
-          <td class="num ${cumCls}">${cumSign}${fmtNum(cum, imperial ? 2 : 1)} ${unit}</td>
+          <td colspan="3" class="water-cum-label">10-day net (rain − ET)</td>
+          <td class="num ${cumCls}">${cumSign}${fmtNum(cumNet, dp)} ${unit}</td>
         </tr>
       </tfoot>
     </table>
