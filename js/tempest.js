@@ -1,41 +1,30 @@
 // WeatherFlow Tempest REST API — fetch daily precipitation and ET actuals.
 //
-// The /observations/station endpoint only ever returns the current snapshot;
-// day_offset is silently ignored. Historical data requires the device endpoint:
+// Endpoint: GET /observations/station/{station_id}?token=...&time_start=...&time_end=...
 //
-//   GET /swd/rest/observations/device/{device_id}?token=...&time_start=...&time_end=...
+// When time_end is set to local midnight (range entirely in the past) the
+// station endpoint should return positional-array rows rather than the live
+// named-field snapshot.  Two positional formats may be returned:
 //
-// Returns minute-by-minute obs_st positional arrays. We aggregate into daily
-// summaries by grouping rows by local date.
+// obs_st_ext  — Tempest Daily Observation (one row per day, 34 cols)
+//   0  timestamp         5  temp_high        6  temp_low
+//   7  avg_humidity       8  rh_high          9  rh_low
+//  16  avg_solar         17  solar_high      19  avg_wind
+//   2  pressure_high      3  pressure_low    28  local_day_rain_accumulation
+//  29  nearcast_rain_accum (Rain Check analog)
 //
-// Minute-by-minute obs_st column indices (Tempest ST device):
-//   0  time_epoch          (s)
-//   2  wind_avg            (m/s)
-//   6  station_pressure    (mb)
-//   7  air_temperature     (°C)
-//   8  relative_humidity   (%)
-//  11  solar_radiation     (W/m²)
-//  12  precip_accumulated  (mm, per-interval)
-//  18  local_day_rain_accumulation  (mm, daily running total — resets at local midnight)
+// obs_st  — Tempest Minute-by-Minute (one row per ~1 min interval, 22 cols)
+//   0  timestamp   2  wind_avg   6  pressure   7  air_temp   8  rh
+//  11  solar_radiation          18  local_day_rain_accumulation
 //
-// For precipitation we take the maximum of col 18 per local date, which equals
-// the day's final sensor total. For ET₀ we derive daily tmax/tmin, mean RH,
-// mean wind speed, peak solar radiation, and mean pressure, then apply FAO-56.
+// If neither positional format is received (named-field current snapshot
+// returned instead), precip is taken from precip_accum_local_yesterday_final
+// for yesterday only; Open-Meteo covers the rest.
 
 (function () {
 
 const BASE = "https://swd.weatherflow.com/swd/rest";
-const OBS_TTL_MS    = 60 * 60 * 1000;  // 1 hour
-const DEVICE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours — device ID rarely changes
-
-// Minute-by-minute obs_st column indices.
-const D_TIME   = 0;
-const D_WIND   = 2;
-const D_PRES   = 6;
-const D_TEMP   = 7;
-const D_RH     = 8;
-const D_SOLAR  = 11;
-const D_PRECIP_DAY = 18; // local_day_rain_accumulation, daily running total
+const TTL_MS = 60 * 60 * 1000; // 1 hour
 
 /** YYYY-MM-DD in the browser's local timezone. */
 function localDateStr(date) {
@@ -45,33 +34,13 @@ function localDateStr(date) {
   return `${y}-${m}-${d}`;
 }
 
-/**
- * Resolve the Tempest (ST) device ID for a station.
- * Calls /stations/{station_id} once and caches for 24 h.
- */
-async function resolveDeviceId(stationId, token) {
-  const cacheKey = String(stationId);
-  const hit = getCached("tempest_device_v1", cacheKey, DEVICE_TTL_MS);
-  if (hit) return hit;
-
-  const url = `${BASE}/stations/${encodeURIComponent(stationId)}?token=${encodeURIComponent(token)}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Tempest stations HTTP ${res.status}`);
-  const data = await res.json();
-
-  const station = Array.isArray(data.stations) ? data.stations[0] : null;
-  const device = station?.devices?.find((d) => d.device_type === "ST");
-  if (!device?.device_id) throw new Error("No Tempest ST device found in station metadata");
-
-  console.log("[Tempest] resolved device_id:", device.device_id, "for station:", stationId);
-  setCached("tempest_device_v1", cacheKey, device.device_id);
-  return device.device_id;
+/** Day-of-year (1–366). */
+function dayOfYear(date) {
+  return Math.round((date - new Date(date.getFullYear(), 0, 0)) / 86400000);
 }
 
 /**
  * Fetch daily precipitation and ET actuals for the past `days` complete days.
- * Returns array oldest-first: [{date, precip, et}, …].
- *
  * @param {{ stationId: string|number, token: string, days?: number, lat?: number|null }} opts
  */
 async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }) {
@@ -80,29 +49,49 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
 
   const latKey = lat != null ? (+lat).toFixed(2) : "x";
   const cacheKey = `${stationId},${today},${latKey}`;
-  const hit = getCached("tempest_v8", cacheKey, OBS_TTL_MS);
+  const hit = getCached("tempest_v9", cacheKey, TTL_MS);
   if (hit) return hit;
 
-  const start = new Date(now);
-  start.setDate(start.getDate() - days);
-  start.setHours(0, 0, 0, 0);
+  // Use local midnight as time_end so the range is entirely in the past,
+  // which should trigger the historical positional-array response format.
+  const end = new Date(now); end.setHours(0, 0, 0, 0);
+  const start = new Date(end); start.setDate(start.getDate() - days);
   const timeStart = Math.floor(start.getTime() / 1000);
-  const timeEnd   = Math.floor(now.getTime() / 1000);
+  const timeEnd   = Math.floor(end.getTime() / 1000);
 
   try {
-    const deviceId = await resolveDeviceId(stationId, token);
-
     const url =
-      `${BASE}/observations/device/${encodeURIComponent(deviceId)}` +
+      `${BASE}/observations/station/${encodeURIComponent(stationId)}` +
       `?token=${encodeURIComponent(token)}&time_start=${timeStart}&time_end=${timeEnd}`;
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`Tempest device HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Tempest HTTP ${res.status}`);
     const data = await res.json();
 
-    console.log("[Tempest] device obs count:", data.obs?.length, "first row:", data.obs?.[0]);
+    const obs = data.obs;
+    const firstRow = Array.isArray(obs) && obs.length ? obs[0] : null;
+    const isPositional = Array.isArray(firstRow);
+    const rowLen = isPositional ? firstRow.length : 0;
 
-    const results = aggregateDaily(data.obs, days, now, today, lat);
-    setCached("tempest_v8", cacheKey, results);
+    console.log("[Tempest] response: obs count =", obs?.length,
+      "| first row type =", isPositional ? `array[${rowLen}]` : typeof firstRow,
+      "| first row =", firstRow);
+
+    let results;
+    if (isPositional && rowLen >= 30) {
+      // obs_st_ext: Tempest Daily Observation — one row per day
+      results = parseExtRows(obs, days, now, today, lat);
+    } else if (isPositional && rowLen >= 18) {
+      // obs_st: minute-by-minute — aggregate into daily summaries
+      results = aggregateMinuteRows(obs, days, now, today, lat);
+    } else {
+      // Named-field current snapshot — extract what we can
+      console.warn("[Tempest] Got live named-field snapshot instead of historical rows.",
+        "time_start:", new Date(timeStart * 1000).toISOString(),
+        "time_end:", new Date(timeEnd * 1000).toISOString());
+      results = parseNamedSnapshot(firstRow, days, now);
+    }
+
+    setCached("tempest_v9", cacheKey, results);
     return results;
   } catch (err) {
     console.error("[Tempest] fetch error:", err);
@@ -110,63 +99,37 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
   }
 }
 
-/**
- * Aggregate minute-by-minute obs_st rows into per-day summaries.
- * For precip: max of col 18 (daily running total) per local date.
- * For ET₀: daily tmax/tmin, mean RH, mean wind, peak solar, mean pressure.
- */
-function aggregateDaily(obs, days, now, today, lat) {
-  if (!Array.isArray(obs) || !obs.length) return emptyDays(days, now);
+// ---------------------------------------------------------------------------
+// obs_st_ext: Tempest Daily Observation (one row per complete day, ~34 cols)
 
-  const byDate = new Map(); // dateStr → { precipMax, temps, rhs, winds, solars, pressures }
-
+function parseExtRows(obs, days, now, today, lat) {
+  const byDate = new Map();
   for (const row of obs) {
-    if (!Array.isArray(row) || row[D_TIME] == null) continue;
-    const dateStr = localDateStr(new Date(row[D_TIME] * 1000));
-    if (dateStr === today) continue; // skip partial current day
-
-    if (!byDate.has(dateStr)) {
-      byDate.set(dateStr, { precipMax: 0, temps: [], rhs: [], winds: [], solars: [], pressures: [] });
-    }
-    const d = byDate.get(dateStr);
-
-    if (typeof row[D_PRECIP_DAY] === "number") d.precipMax = Math.max(d.precipMax, row[D_PRECIP_DAY]);
-    if (typeof row[D_TEMP]  === "number") d.temps.push(row[D_TEMP]);
-    if (typeof row[D_RH]    === "number") d.rhs.push(row[D_RH]);
-    if (typeof row[D_WIND]  === "number") d.winds.push(row[D_WIND]);
-    if (typeof row[D_SOLAR] === "number") d.solars.push(row[D_SOLAR]);
-    if (typeof row[D_PRES]  === "number") d.pressures.push(row[D_PRES]);
+    if (!Array.isArray(row) || row[0] == null) continue;
+    const dateStr = localDateStr(new Date(row[0] * 1000));
+    if (dateStr === today) continue;
+    byDate.set(dateStr, row);
   }
 
   const result = [];
   for (let offset = days; offset >= 1; offset--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - offset);
+    const d = new Date(now); d.setDate(d.getDate() - offset);
     const dateStr = localDateStr(d);
-    const agg = byDate.get(dateStr);
+    const row = byDate.get(dateStr);
+    if (!row) { result.push({ date: dateStr, precip: null, et: null }); continue; }
 
-    if (!agg || !agg.temps.length) {
-      result.push({ date: dateStr, precip: null, et: null });
-      continue;
-    }
-
-    const precip = agg.precipMax;
-
-    const tmax = Math.max(...agg.temps);
-    const tmin = Math.min(...agg.temps);
-    const mean  = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
-    const rhMean    = agg.rhs.length    ? mean(agg.rhs)       : null;
-    const windAvg   = agg.winds.length  ? mean(agg.winds)     : null;
-    const solarPeak = agg.solars.length ? Math.max(...agg.solars) : null;
-    const presMean  = agg.pressures.length ? mean(agg.pressures) : null;
+    const precip = typeof row[28] === "number" ? row[28] : null;
     const doy = dayOfYear(new Date(dateStr + "T12:00:00"));
 
     const et = lat != null ? calcEt0PM({
-      tmax, tmin,
-      rhHigh: rhMean, rhLow: rhMean,
-      pressureHighMb: presMean, pressureLowMb: presMean,
-      windAvgMs: windAvg,
-      solarPeakWm2: solarPeak,
+      tmax:           typeof row[5]  === "number" ? row[5]  : null, // highest temp
+      tmin:           typeof row[6]  === "number" ? row[6]  : null, // lowest temp
+      rhHigh:         typeof row[8]  === "number" ? row[8]  : null, // highest RH
+      rhLow:          typeof row[9]  === "number" ? row[9]  : null, // lowest RH
+      pressureHighMb: typeof row[2]  === "number" ? row[2]  : null, // highest pressure
+      pressureLowMb:  typeof row[3]  === "number" ? row[3]  : null, // lowest pressure
+      windAvgMs:      typeof row[19] === "number" ? row[19] : null, // avg wind
+      solarPeakWm2:   typeof row[17] === "number" ? row[17] : null, // highest solar
       lat, doy,
     }) : null;
 
@@ -175,16 +138,73 @@ function aggregateDaily(obs, days, now, today, lat) {
   return result;
 }
 
-/** Day-of-year (1–366) for a given Date. */
-function dayOfYear(date) {
-  const start = new Date(date.getFullYear(), 0, 0);
-  return Math.round((date - start) / 86400000);
+// ---------------------------------------------------------------------------
+// obs_st: minute-by-minute (aggregate into daily summaries)
+// Column indices per API docs:
+//   0=timestamp  2=wind_avg  6=pressure  7=air_temp  8=rh
+//  11=solar_radiation  18=local_day_rain_accumulation
+
+function aggregateMinuteRows(obs, days, now, today, lat) {
+  const byDate = new Map();
+
+  for (const row of obs) {
+    if (!Array.isArray(row) || row[0] == null) continue;
+    const dateStr = localDateStr(new Date(row[0] * 1000));
+    if (dateStr === today) continue;
+
+    if (!byDate.has(dateStr)) {
+      byDate.set(dateStr, { precipMax: 0, temps: [], rhs: [], winds: [], solars: [], pressures: [] });
+    }
+    const d = byDate.get(dateStr);
+    if (typeof row[18] === "number") d.precipMax = Math.max(d.precipMax, row[18]);
+    if (typeof row[7]  === "number") d.temps.push(row[7]);
+    if (typeof row[8]  === "number") d.rhs.push(row[8]);
+    if (typeof row[2]  === "number") d.winds.push(row[2]);
+    if (typeof row[11] === "number") d.solars.push(row[11]);
+    if (typeof row[6]  === "number") d.pressures.push(row[6]);
+  }
+
+  const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const result = [];
+  for (let offset = days; offset >= 1; offset--) {
+    const d = new Date(now); d.setDate(d.getDate() - offset);
+    const dateStr = localDateStr(d);
+    const agg = byDate.get(dateStr);
+    if (!agg || !agg.temps.length) { result.push({ date: dateStr, precip: null, et: null }); continue; }
+
+    const doy = dayOfYear(new Date(dateStr + "T12:00:00"));
+    const et = lat != null ? calcEt0PM({
+      tmax: Math.max(...agg.temps), tmin: Math.min(...agg.temps),
+      rhHigh: agg.rhs.length ? mean(agg.rhs) : null,
+      rhLow:  agg.rhs.length ? mean(agg.rhs) : null,
+      pressureHighMb: agg.pressures.length ? mean(agg.pressures) : null,
+      pressureLowMb:  agg.pressures.length ? mean(agg.pressures) : null,
+      windAvgMs:    agg.winds.length  ? mean(agg.winds)  : null,
+      solarPeakWm2: agg.solars.length ? Math.max(...agg.solars) : null,
+      lat, doy,
+    }) : null;
+
+    result.push({ date: dateStr, precip: agg.precipMax, et });
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Named-field snapshot fallback: only yesterday's final precip is available.
+
+function parseNamedSnapshot(obs, days, now) {
+  const result = emptyDays(days, now);
+  if (!obs || typeof obs !== "object" || Array.isArray(obs)) return result;
+  // Overwrite the most recent entry (yesterday) with whatever precip field exists.
+  const precip = typeof obs.precip_accum_local_yesterday_final === "number"
+    ? obs.precip_accum_local_yesterday_final : null;
+  if (result.length > 0) result[result.length - 1].precip = precip;
+  return result;
 }
 
 function emptyDays(days, now) {
   return Array.from({ length: days }, (_, i) => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - (days - i));
+    const d = new Date(now); d.setDate(d.getDate() - (days - i));
     return { date: localDateStr(d), precip: null, et: null };
   });
 }
