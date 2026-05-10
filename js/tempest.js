@@ -68,6 +68,7 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Tempest HTTP ${res.status}`);
     const data = await res.json();
+    console.log("[Tempest] raw response keys:", Object.keys(data), "obs field:", data.obs, "obs_st field:", data.obs_st);
     const results = parseDailyObs(data.obs, days, now, today, lat);
     setCached("tempest_v4", cacheKey, results);
     return results;
@@ -87,10 +88,8 @@ async function fetchTempestDailyStats({ stationId, token, days = 5, lat = null }
  * Today's row (partial day) is skipped.
  */
 function parseDailyObs(obs, days, now, today, lat) {
+  console.log("[Tempest] parseDailyObs: obs type:", Array.isArray(obs) ? "array" : typeof obs, "length:", obs?.length, "first row:", obs?.[0]);
   if (!Array.isArray(obs) || !obs.length) return emptyDays(days, now);
-
-  // Log the first row so column layout can be verified in the browser console.
-  console.log("[Tempest] obs row count:", obs.length, "first row:", obs[0]);
 
   const byDate = new Map();
 
