@@ -41,6 +41,7 @@ function renderItem(loc, onSelect, rerender) {
   const edit = document.createElement("button");
   edit.type = "button";
   edit.textContent = "Edit";
+  edit.setAttribute("aria-label", `Edit "${loc.name}"`);
   edit.addEventListener("click", () => {
     li.replaceWith(renderEditForm(loc, onSelect, rerender));
   });
@@ -48,6 +49,7 @@ function renderItem(loc, onSelect, rerender) {
   const del = document.createElement("button");
   del.type = "button";
   del.textContent = "Remove";
+  del.setAttribute("aria-label", `Remove "${loc.name}"`);
   del.addEventListener("click", () => {
     if (confirm(`Remove "${loc.name}"?`)) {
       removeLocation(loc.id);

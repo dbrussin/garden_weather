@@ -45,6 +45,9 @@ for (const input of [els.coordLat, els.coordLon, els.coordName]) {
 
 els.tempestSave.addEventListener("click", onTempestSave);
 els.tempestClear.addEventListener("click", onTempestClear);
+for (const input of [els.tempestStationId, els.tempestToken]) {
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); onTempestSave(); } });
+}
 
 syncUnitButtons();
 
@@ -106,6 +109,7 @@ async function activate({ lat, lon, name }) {
   const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
   try {
     const forecast = await fetchForecast({ lat, lon });
+    if (active?.lat !== lat || active?.lon !== lon) return; // superseded by a later activation
     cache = { forecast, historical: null, tempest: null, key };
     renderDashboard(forecast, null, null);
     setStatus("");

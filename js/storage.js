@@ -22,7 +22,11 @@ function read() {
 }
 
 function write(list) {
-  localStorage.setItem(KEY, JSON.stringify(list));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(list));
+  } catch {
+    // Storage full or disabled — saved locations are best-effort.
+  }
 }
 
 function listLocations() {

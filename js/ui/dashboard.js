@@ -140,6 +140,8 @@ function renderWater(waterDetail, rain) {
   const sourceNote = waterDetail.hasTempest
     ? `<span class="water-source-badge">Actuals: Tempest</span>`
     : `<span class="water-source-badge water-source-meteo">Actuals: Open-Meteo</span>`;
+  const headerLabel = document.getElementById("water-source-label");
+  if (headerLabel) headerLabel.textContent = waterDetail.hasTempest ? "(Tempest)" : "(Open-Meteo)";
 
   // Compute running cumulative net (precip − ET) across all rows for table column.
   let runningCum = 0;

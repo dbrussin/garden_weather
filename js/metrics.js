@@ -10,8 +10,11 @@
  * Frost risk: look at the next 3 days of min temperatures. Thresholds in °C.
  */
 function frostRisk(daily, { warnBelow = 2, severeBelow = 0 } = {}) {
-  const mins = (daily?.temperature_2m_min || []).slice(3, 6); // skip 3 past_days
-  const dates = (daily?.time || []).slice(3, 6);
+  const times = daily?.time || [];
+  const todayIdx = todayIndex(times);
+  const start = todayIdx >= 0 ? todayIdx + 1 : 0;
+  const mins = (daily?.temperature_2m_min || []).slice(start, start + 3);
+  const dates = times.slice(start, start + 3);
   let worst = { level: "none", day: null, temp: null };
   for (let i = 0; i < mins.length; i++) {
     const t = mins[i];

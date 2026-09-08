@@ -51,7 +51,7 @@ function buildAdvice({ frost, soil, water, rain, sun, humidity, dryWindow }) {
     bullets.push(`Very dry air (VPD ${humidity.vpd} kPa). Expect rapid wilting of unestablished plants.`);
   }
 
-  if (dryWindow && dryWindow.hours >= 6 && !frost) {
+  if (dryWindow && dryWindow.hours >= 6 && (!frost || frost.level === "none")) {
     bullets.push(`${dryWindow.hours}h rain-free window starting ${shortDate(dryWindow.start)} — good for spraying or transplanting.`);
   }
 

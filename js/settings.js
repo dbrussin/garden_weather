@@ -23,7 +23,11 @@ function read() {
 }
 
 function write(settings) {
-  localStorage.setItem(KEY, JSON.stringify(settings));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(settings));
+  } catch {
+    // Storage full or disabled — unit preference is best-effort.
+  }
 }
 
 let state = read();

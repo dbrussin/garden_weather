@@ -19,6 +19,7 @@ css/
 js/
   app.js                Entry point. Wires geo + storage + API + UI.
   api.js                Open-Meteo fetch (forecast + reverse geocode)
+  tempest.js            WeatherFlow Tempest station fetch (optional, per-location)
   geo.js                navigator.geolocation wrapper
   storage.js            Saved locations in localStorage
   cache.js              TTL cache backed by localStorage
@@ -52,7 +53,7 @@ file is an IIFE that exposes its public API on `window`:
 `index.html` loads the scripts in dependency order (bottom of `<body>`):
 
 ```
-cache → settings → storage → geo → metrics → api
+cache → settings → storage → geo → metrics → api → tempest
 → ui/format → ui/chart → advice → ui/dashboard → ui/locations → app
 ```
 
@@ -88,8 +89,10 @@ Declared in `api.js` as three arrays:
 - `DAILY_VARS` — min/max temp, precipitation sum + probability, ET0, UV max,
   sunrise, sunset, weather code.
 
-The request uses `past_days=3` and `forecast_days=7`. Trailing metrics
-(GDD, water balance) use the past slice; frost and advice look forward.
+The request uses `past_days=5` and `forecast_days=7`. Trailing metrics
+(GDD, water balance) use the past slice; frost and advice look forward from
+today's index in `daily.time` — never hardcode a numeric offset for "today",
+since `past_days` (and therefore today's index) can change.
 
 ## Saved locations
 
@@ -125,9 +128,13 @@ near-identical coords. Bump the key to `.v2` if the shape changes and migrate.
 
 - No build tooling, no frameworks, no package.json — GitHub Pages serves the
   repo root directly. If a task seems to need a bundler, stop and ask.
-- No network calls outside Open-Meteo. No analytics or tracking.
-- No API keys. If a future data source needs one, it probably doesn't belong
-  in a static public site.
+- No network calls outside Open-Meteo (the optional Tempest station
+  integration in `tempest.js` is the one exception — it's opt-in, per-location,
+  and the token is stored only in the user's own `localStorage`). No
+  analytics or tracking.
+- No API keys beyond the optional user-supplied Tempest token above. If a
+  future data source needs a key of its own, it probably doesn't belong in a
+  static public site.
 
 ## Local dev
 
