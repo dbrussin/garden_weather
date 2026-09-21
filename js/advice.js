@@ -4,7 +4,7 @@
 
 (function () {
 
-function buildAdvice({ frost, soil, water, rain, sun, humidity, dryWindow }) {
+function buildAdvice({ frost, soil, water, rain, sun, humidity, dryWindow, utcOffsetSeconds = 0 }) {
   const bullets = [];
   let level = "ok";
   let headline = "Good gardening day.";
@@ -34,7 +34,7 @@ function buildAdvice({ frost, soil, water, rain, sun, humidity, dryWindow }) {
     }
   }
 
-  if (rain && daysUntil(rain.date) <= 2) {
+  if (rain && daysUntil(rain.date, utcOffsetSeconds) <= 2) {
     bullets.push(`Rain coming ${shortDate(rain.date)} (~${fmtPrecip(rain.amount)}) — delay watering.`);
   }
 
@@ -68,12 +68,21 @@ function shortDate(iso) {
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
-function daysUntil(iso) {
+// `iso` is a date-only string ("2026-09-10") from daily.time, stamped in the
+// queried location's local calendar. Date.parse on a date-only string is
+// UTC, so we compare against "now" shifted by the location's own offset
+// (same trick as metrics.js's todayIndex) rather than raw Date.now() —
+// otherwise this drifts by up to a day right around the location's own
+// midnight. `nowMs` defaults to the real clock but can be pinned by callers
+// (tests) for deterministic assertions.
+function daysUntil(iso, utcOffsetSeconds = 0, nowMs = Date.now()) {
   const d = Date.parse(iso);
   if (!d) return Infinity;
-  return (d - Date.now()) / 86_400_000;
+  const now = nowMs + utcOffsetSeconds * 1000;
+  return (d - now) / 86_400_000;
 }
 
 window.buildAdvice = buildAdvice;
+window.daysUntil = daysUntil;
 
 })();

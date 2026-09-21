@@ -85,6 +85,11 @@ const DAILY_VARS = [
  */
 async function fetchForecast({ lat, lon }) {
   const coordKey = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+  // UTC calendar day, used only to partition the hist_daily cache key below —
+  // it doesn't need to match the queried location's local day, it just needs
+  // to roll over once a day so the cache doesn't grow stale. Actual
+  // day-boundary math against the fetched data uses todayIndex() with the
+  // response's own utc_offset_seconds instead (see below).
   const today = new Date().toISOString().slice(0, 10);
 
   const forecastHit = getCached("forecast", coordKey, FORECAST_TTL_MS);
@@ -128,9 +133,15 @@ async function fetchForecast({ lat, lon }) {
     merged = { ...data, daily: mergedDaily };
   } else {
     // Extract and cache the historical daily slice (past days only, before today).
+    // Use the response's own utc_offset_seconds, not the browser's/UTC's
+    // calendar day — daily.time is stamped in the queried location's local
+    // time, which can be a different calendar day than "today" here for
+    // several hours of every day. Getting this boundary wrong would
+    // duplicate or drop a day where the cached historical slice meets the
+    // freshly-fetched one on a later call.
     const daily = data.daily || {};
     const times = daily.time || [];
-    const todayIdx = times.findIndex((t) => t?.slice(0, 10) === today);
+    const todayIdx = todayIndex(times, data.utc_offset_seconds ?? 0);
     if (todayIdx > 0) {
       const slice = {};
       for (const key of Object.keys(daily)) {

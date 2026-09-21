@@ -94,6 +94,25 @@ The request uses `past_days=5` and `forecast_days=7`. Trailing metrics
 today's index in `daily.time` — never hardcode a numeric offset for "today",
 since `past_days` (and therefore today's index) can change.
 
+**Timezones — this is the sharp edge in this file.** `timezone=auto` stamps
+`daily.time` (date-only, e.g. `"2026-09-08"`) and `hourly.time` (date-time,
+e.g. `"2026-09-08T14:00"`) in the *queried location's* local calendar, with
+no offset suffix. Neither is UTC, and neither is the browser's own
+timezone — and naively parsing them lands on a *third*, different answer for
+each:
+- A date-only string parses as UTC midnight (`Date.parse("2026-09-08")`).
+- A date-time string with no offset parses as the *engine's own* local time
+  (`Date.parse("2026-09-08T14:00")`) — a well-known JS gotcha, and a
+  different rule than the date-only case above.
+
+So never compare these strings against `Date.now()` or `new Date()`
+directly. Use `metrics.js`'s `todayIndex(times, utcOffsetSeconds)` /
+`nearestHourIndex(times, utcOffsetSeconds)` (or the higher-level functions
+built on them), passing the forecast response's own `utc_offset_seconds`
+field. `api.js`'s `fetchForecast` cache-merge logic needs this too, for the
+same reason. Test regressions for this class of bug live in
+`test/metrics.test.js`.
+
 ## Saved locations
 
 `storage.js` is the only file that touches `localStorage` for locations. Key:
@@ -146,6 +165,31 @@ feature run a local server:
 python3 -m http.server 8000
 # then open http://localhost:8000
 ```
+
+## Tests
+
+`metrics.js` and `advice.js` are pure, so they're covered by plain
+`node:test` files in `test/` — no framework, no `package.json`, nothing to
+install beyond Node itself (consistent with "no build tooling" above: this
+is a dev-time convenience for contributors, not part of the deployed site).
+
+```
+node --test test/
+```
+
+`test/helpers/load.js` runs each `js/*.js` file through `vm` in an isolated
+sandbox and returns what it attached to `window`, since these files aren't
+`require()`-able modules — they're plain scripts that assume a global
+`window` (see "Module system" above). Use it to load whichever file you're
+testing; pass `deps` to also load files it depends on into the same sandbox
+first (mirroring `index.html`'s script order), or `globals` to stub out a
+dependency instead.
+
+When you fix a bug, add a regression test for it here before considering the
+fix done — the timezone-handling bugs this file describes above were found
+this way (by writing the test that pins down the correct behavior, then
+using it as the fix's own certificate of correctness), so this isn't
+optional busywork.
 
 ## Deploy (GitHub Pages)
 
