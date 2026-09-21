@@ -12,15 +12,21 @@ function renderDashboard(forecast, historical, tempestActuals) {
   document.getElementById("dashboard").hidden = false;
   document.getElementById("advice").hidden = false;
 
-  const frost = frostRisk(forecast.daily);
-  const soil = soilSnapshot(forecast.hourly);
-  const water = waterBalance(forecast.daily);
-  const waterDetail = dailyWaterDetail(forecast.daily, tempestActuals || null);
-  const rain = nextRain(forecast.daily);
-  const sun = sunSnapshot(forecast.daily);
-  const gdd = growingDegreeDays(forecast.daily);
-  const humidity = humidityMetrics(forecast.current, forecast.hourly);
-  const dryWindow = rainFreeWindow(forecast.hourly);
+  // daily/hourly times are stamped in the queried location's local calendar
+  // (timezone=auto), never UTC and never the browser's own timezone — every
+  // "what day/hour is it right now" computation needs this to line up with
+  // the right row.
+  const utcOffsetSeconds = forecast.utc_offset_seconds ?? 0;
+
+  const frost = frostRisk(forecast.daily, { utcOffsetSeconds });
+  const soil = soilSnapshot(forecast.hourly, utcOffsetSeconds);
+  const water = waterBalance(forecast.daily, { utcOffsetSeconds });
+  const waterDetail = dailyWaterDetail(forecast.daily, tempestActuals || null, { utcOffsetSeconds });
+  const rain = nextRain(forecast.daily, { utcOffsetSeconds });
+  const sun = sunSnapshot(forecast.daily, utcOffsetSeconds);
+  const gdd = growingDegreeDays(forecast.daily, { utcOffsetSeconds });
+  const humidity = humidityMetrics(forecast.current, forecast.hourly, utcOffsetSeconds);
+  const dryWindow = rainFreeWindow(forecast.hourly, { utcOffsetSeconds });
   const zone = historical ? hardinessZone(historical) : null;
   const planting = plantingGuide(soil, frost);
 
@@ -35,8 +41,8 @@ function renderDashboard(forecast, historical, tempestActuals) {
   renderZone(zone);
   renderPlanting(planting);
   renderCharts(forecast);
-  renderForecast(forecast.daily);
-  renderAdvice(buildAdvice({ frost, soil, water, rain, sun, humidity, dryWindow }));
+  renderForecast(forecast.daily, utcOffsetSeconds);
+  renderAdvice(buildAdvice({ frost, soil, water, rain, sun, humidity, dryWindow, utcOffsetSeconds }));
 }
 
 function body(id) {
@@ -140,6 +146,8 @@ function renderWater(waterDetail, rain) {
   const sourceNote = waterDetail.hasTempest
     ? `<span class="water-source-badge">Actuals: Tempest</span>`
     : `<span class="water-source-badge water-source-meteo">Actuals: Open-Meteo</span>`;
+  const headerLabel = document.getElementById("water-source-label");
+  if (headerLabel) headerLabel.textContent = waterDetail.hasTempest ? "(Tempest)" : "(Open-Meteo)";
 
   // Compute running cumulative net (precip − ET) across all rows for table column.
   let runningCum = 0;
@@ -321,7 +329,8 @@ function renderCharts(forecast) {
   const imperial = getUnits() === "imperial";
   const hourly = forecast.hourly || {};
   const daily = forecast.daily || {};
-  const nowIdx = hourlyNowIndex(hourly);
+  const utcOffsetSeconds = forecast.utc_offset_seconds ?? 0;
+  const nowIdx = hourlyNowIndex(hourly, utcOffsetSeconds);
   const span = 48;
   const end = Math.min((hourly.time || []).length, nowIdx + span);
 
@@ -339,7 +348,8 @@ function renderCharts(forecast) {
   });
 
   const days = 7;
-  const startIdx = Math.max(0, (daily.time || []).findIndex((t) => Date.parse(t) >= Date.now() - 86_400_000));
+  const todayIdx = todayIndex(daily.time || [], utcOffsetSeconds);
+  const startIdx = Math.max(0, todayIdx >= 0 ? todayIdx - 1 : 0);
   const dayTimes = (daily.time || []).slice(startIdx, startIdx + days);
   const precipVals = (daily.precipitation_sum || []).slice(startIdx, startIdx + days)
     .map((v) => v == null ? null : imperial ? mmToIn(v) : v);
@@ -374,14 +384,13 @@ function hourFormatter(times) {
   };
 }
 
-function renderForecast(daily) {
+function renderForecast(daily, utcOffsetSeconds = 0) {
   const el = body("panel-forecast");
   if (!daily?.time?.length) { el.textContent = "No data."; return; }
   const rows = [];
-  const now = Date.now();
-  for (let i = 0; i < daily.time.length; i++) {
-    const d = Date.parse(daily.time[i]);
-    if (!d || d < now - 86_400_000) continue;
+  const todayIdx = todayIndex(daily.time, utcOffsetSeconds);
+  const start = Math.max(0, todayIdx >= 0 ? todayIdx - 1 : 0);
+  for (let i = start; i < daily.time.length; i++) {
     rows.push(`
       <tr>
         <td>${fmtDay(daily.time[i])}</td>

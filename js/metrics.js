@@ -9,9 +9,12 @@
 /**
  * Frost risk: look at the next 3 days of min temperatures. Thresholds in °C.
  */
-function frostRisk(daily, { warnBelow = 2, severeBelow = 0 } = {}) {
-  const mins = (daily?.temperature_2m_min || []).slice(3, 6); // skip 3 past_days
-  const dates = (daily?.time || []).slice(3, 6);
+function frostRisk(daily, { warnBelow = 2, severeBelow = 0, utcOffsetSeconds = 0 } = {}) {
+  const times = daily?.time || [];
+  const todayIdx = todayIndex(times, utcOffsetSeconds);
+  const start = todayIdx >= 0 ? todayIdx + 1 : 0;
+  const mins = (daily?.temperature_2m_min || []).slice(start, start + 3);
+  const dates = times.slice(start, start + 3);
   let worst = { level: "none", day: null, temp: null };
   for (let i = 0; i < mins.length; i++) {
     const t = mins[i];
@@ -34,16 +37,17 @@ function rank(level) {
  * Growing degree days accumulated over the past + today.
  * Daily GDD = max(0, ((tmax+tmin)/2) - base). Base in °C.
  */
-function growingDegreeDays(daily, { base = 10 } = {}) {
+function growingDegreeDays(daily, { base = 10, utcOffsetSeconds = 0 } = {}) {
   const tmax = daily?.temperature_2m_max || [];
   const tmin = daily?.temperature_2m_min || [];
   const times = daily?.time || [];
+  const todayIdx = todayIndex(times, utcOffsetSeconds);
+  // If "today" isn't in range (shouldn't normally happen), fall back to
+  // summing everything available rather than returning nothing.
+  const end = todayIdx >= 0 ? todayIdx + 1 : tmax.length;
   let total = 0;
   let days = 0;
-  const now = Date.now();
-  for (let i = 0; i < tmax.length; i++) {
-    const date = times[i] ? Date.parse(times[i]) : null;
-    if (date == null || date > now) continue;
+  for (let i = 0; i < end; i++) {
     const hi = tmax[i];
     const lo = tmin[i];
     if (hi == null || lo == null) continue;
@@ -53,8 +57,8 @@ function growingDegreeDays(daily, { base = 10 } = {}) {
   return { total: Math.round(total * 10) / 10, days, base };
 }
 
-function soilSnapshot(hourly) {
-  const idx = nearestHourIndex(hourly?.time || []);
+function soilSnapshot(hourly, utcOffsetSeconds = 0) {
+  const idx = nearestHourIndex(hourly?.time || [], utcOffsetSeconds);
   if (idx < 0) return null;
   return {
     surfaceTemp: hourly.soil_temperature_0cm?.[idx] ?? null,
@@ -76,15 +80,16 @@ function soilSnapshot(hourly) {
  *
  * @param {object} daily  Raw Open-Meteo daily object.
  * @param {Array<{ date: string, et: number|null, precip: number|null }>|null} tempestActuals
- * @param {{ histDays?: number, futureDays?: number }} opts
+ * @param {{ histDays?: number, futureDays?: number, utcOffsetSeconds?: number }} opts
  */
-function dailyWaterDetail(daily, tempestActuals, { histDays = 5, futureDays = 5 } = {}) {
+function dailyWaterDetail(daily, tempestActuals, { histDays = 5, futureDays = 5, utcOffsetSeconds = 0 } = {}) {
   // Support legacy two-arg call: dailyWaterDetail(daily, opts)
   if (tempestActuals && !Array.isArray(tempestActuals)) {
     const opts = tempestActuals;
     tempestActuals = null;
     histDays = opts.histDays ?? histDays;
     futureDays = opts.futureDays ?? futureDays;
+    utcOffsetSeconds = opts.utcOffsetSeconds ?? utcOffsetSeconds;
   }
 
   const times = daily?.time || [];
@@ -100,8 +105,7 @@ function dailyWaterDetail(daily, tempestActuals, { histDays = 5, futureDays = 5 
     }
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const todayIdx = times.findIndex((t) => t?.slice(0, 10) === today);
+  const todayIdx = todayIndex(times, utcOffsetSeconds);
   if (todayIdx < 0) return { historical: [], projected: [], cumulative: 0, hasTempest: false };
 
   const historical = [];
@@ -142,16 +146,15 @@ function dailyWaterDetail(daily, tempestActuals, { histDays = 5, futureDays = 5 
   return { historical, projected, cumulative, hasTempest };
 }
 
-function waterBalance(daily, { window = 7 } = {}) {
+function waterBalance(daily, { window = 7, utcOffsetSeconds = 0 } = {}) {
   const times = daily?.time || [];
   const et = daily?.et0_fao_evapotranspiration || [];
   const precip = daily?.precipitation_sum || [];
-  const now = Date.now();
+  const todayIdx = todayIndex(times, utcOffsetSeconds);
+  if (todayIdx < 0) return { window: 0, et: 0, precip: 0, deficit: 0 };
+  const start = Math.max(0, todayIdx - window + 1);
   let etSum = 0, precipSum = 0, days = 0;
-  for (let i = 0; i < times.length; i++) {
-    const d = Date.parse(times[i]);
-    if (!d || d > now) continue;
-    if ((now - d) / 86_400_000 > window) continue;
+  for (let i = start; i <= todayIdx; i++) {
     etSum += et[i] ?? 0;
     precipSum += precip[i] ?? 0;
     days += 1;
@@ -164,20 +167,19 @@ function waterBalance(daily, { window = 7 } = {}) {
   };
 }
 
-function nextRain(daily) {
+function nextRain(daily, { utcOffsetSeconds = 0 } = {}) {
   const times = daily?.time || [];
   const precip = daily?.precipitation_sum || [];
-  const now = Date.now();
-  for (let i = 0; i < times.length; i++) {
-    const d = Date.parse(times[i]);
-    if (!d || d < now - 86_400_000) continue;
+  const todayIdx = todayIndex(times, utcOffsetSeconds);
+  const start = Math.max(0, todayIdx);
+  for (let i = start; i < times.length; i++) {
     if ((precip[i] ?? 0) >= 1) return { date: times[i], amount: precip[i] };
   }
   return null;
 }
 
-function sunSnapshot(daily) {
-  const i = todayIndex(daily?.time || []);
+function sunSnapshot(daily, utcOffsetSeconds = 0) {
+  const i = todayIndex(daily?.time || [], utcOffsetSeconds);
   if (i < 0) return null;
   return {
     uvMax: daily.uv_index_max?.[i] ?? null,
@@ -195,8 +197,8 @@ function sunSnapshot(daily) {
  *   Roughly: <0.4 risk of fungal disease, 0.4–1.2 ideal, >1.6 stressed.
  * Leaf wetness hours — hours with RH ≥ 90% or temp within ~1°C of dewpoint.
  */
-function humidityMetrics(current, hourly) {
-  const idx = nearestHourIndex(hourly?.time || []);
+function humidityMetrics(current, hourly, utcOffsetSeconds = 0) {
+  const idx = nearestHourIndex(hourly?.time || [], utcOffsetSeconds);
   const nowTemp = current?.temperature_2m ?? hourly?.temperature_2m?.[idx];
   const nowRh = current?.relative_humidity_2m ?? hourly?.relative_humidity_2m?.[idx];
   const nowDew = current?.dew_point_2m ?? hourly?.dew_point_2m?.[idx];
@@ -233,11 +235,11 @@ function vpd(tempC, rhPct) {
  * Longest upcoming stretch of hours with precipitation below `threshold` mm,
  * starting from now. Useful for scheduling spraying, transplanting, mowing.
  */
-function rainFreeWindow(hourly, { threshold = 0.1, lookahead = 72 } = {}) {
+function rainFreeWindow(hourly, { threshold = 0.1, lookahead = 72, utcOffsetSeconds = 0 } = {}) {
   const times = hourly?.time || [];
   const precip = hourly?.precipitation || [];
   const probs = hourly?.precipitation_probability || [];
-  const start = nearestHourIndex(times);
+  const start = nearestHourIndex(times, utcOffsetSeconds);
   if (start < 0) return null;
   const end = Math.min(start + lookahead, times.length);
   let best = { startIdx: null, length: 0 };
@@ -398,18 +400,55 @@ function calcEt0PM({ tmax, tmin, rhHigh, rhLow, windAvgMs, solarPeakWm2,
 // ---------------------------------------------------------------------------
 // helpers
 
-function todayIndex(times) {
-  const today = new Date().toISOString().slice(0, 10);
+/**
+ * Open-Meteo's `timezone=auto` stamps daily/hourly times as naive local time
+ * *for the queried location* — never UTC, never the browser's own timezone.
+ * `utcOffsetSeconds` (the response's `utc_offset_seconds` field) is what lets
+ * us tell what day/hour "now" is at that location. Shifting the current
+ * instant by the offset and re-rendering it through `toISOString` (which
+ * always renders in UTC) produces exactly the location's wall-clock
+ * date/time as a string — a standard trick for computing an arbitrary
+ * offset's local calendar date without a timezone library.
+ *
+ * `nowMs` defaults to the real clock but can be pinned by callers (tests)
+ * for deterministic assertions.
+ */
+function locationNowIso(utcOffsetSeconds = 0, nowMs = Date.now()) {
+  return new Date(nowMs + utcOffsetSeconds * 1000).toISOString();
+}
+
+/**
+ * Index of "today" in a daily.time array (date-only strings, e.g.
+ * "2026-09-08"), compared against the *location's* wall-clock date — not
+ * the browser's and not UTC's, since either can be a different calendar day
+ * than the location for several hours of every day. Never hardcode a
+ * numeric offset for "today": `past_days` (and therefore today's index) can
+ * change independently of this function.
+ */
+function todayIndex(times, utcOffsetSeconds = 0, nowMs = Date.now()) {
+  const today = locationNowIso(utcOffsetSeconds, nowMs).slice(0, 10);
   return times.findIndex((t) => t?.slice(0, 10) === today);
 }
 
-function nearestHourIndex(times) {
+/**
+ * Index of the hourly.time entry (naive local date-time, e.g.
+ * "2026-09-08T14:00") nearest to now, in the location's own wall clock.
+ *
+ * hourly.time has no timezone suffix. Per the ECMAScript Date Time String
+ * Format, a date-time string *with* a "T" but *without* an offset parses as
+ * the *browser's* local time (unlike a date-only string, which parses as
+ * UTC) — so naively calling `Date.parse` here would silently reinterpret
+ * the location's local time as wherever the browser happens to be. Forcing
+ * UTC interpretation (appending "Z") on both sides of the comparison makes
+ * the result independent of the browser's timezone.
+ */
+function nearestHourIndex(times, utcOffsetSeconds = 0, nowMs = Date.now()) {
   if (!times?.length) return -1;
-  const now = Date.now();
+  const now = nowMs + utcOffsetSeconds * 1000;
   let best = 0;
   let bestDelta = Infinity;
   for (let i = 0; i < times.length; i++) {
-    const t = Date.parse(times[i]);
+    const t = Date.parse(`${times[i]}Z`);
     const d = Math.abs(t - now);
     if (d < bestDelta) { bestDelta = d; best = i; }
   }
@@ -417,11 +456,11 @@ function nearestHourIndex(times) {
 }
 
 /**
- * Return the index of the first hourly sample at or after "now". Useful
- * when callers want to slice the forecast window for charts.
+ * Return the index of the hourly sample nearest to "now" at the location.
+ * Useful when callers want to slice the forecast window for charts.
  */
-function hourlyNowIndex(hourly) {
-  return nearestHourIndex(hourly?.time || []);
+function hourlyNowIndex(hourly, utcOffsetSeconds = 0) {
+  return nearestHourIndex(hourly?.time || [], utcOffsetSeconds);
 }
 
 function round(n) {
@@ -441,5 +480,7 @@ window.rainFreeWindow = rainFreeWindow;
 window.hardinessZone = hardinessZone;
 window.plantingGuide = plantingGuide;
 window.hourlyNowIndex = hourlyNowIndex;
+window.todayIndex = todayIndex;
+window.nearestHourIndex = nearestHourIndex;
 
 })();
